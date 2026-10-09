@@ -5,6 +5,7 @@ import { backupAgora, listarBackups } from "../db/backup";
 import { gravarConfig, lerConfig } from "../db/config";
 import { atalhoDoEvento } from "./atalho";
 import EditorPrioridades from "./EditorPrioridades";
+import { CHAVE_INATIVIDADE, lerLimiteInatividade } from "../db/foco";
 import { rotuloAtalho } from "./origens";
 import { escolherTema, lerTema, NOME_TEMA, type Tema } from "../tema";
 
@@ -22,10 +23,12 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoFechar }: Props
   const [mensagemBackup, setMensagemBackup] = useState<string | null>(null);
   const [tema, setTema] = useState<Tema | null>(null);
   const [usarSelecao, setUsarSelecao] = useState(true);
+  const [inatividade, setInatividade] = useState("");
 
   useEffect(() => {
     lerTema().then(setTema);
     lerConfig("usar_selecao").then((v) => setUsarSelecao(v !== "nao"));
+    lerLimiteInatividade().then((m) => setInatividade(String(m)));
   }, []);
 
   async function trocarUsarSelecao(usar: boolean) {
@@ -161,6 +164,29 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoFechar }: Props
             </span>
           </span>
         </label>
+
+        <h3 className="mt-7 text-[15px] font-semibold">Foco</h3>
+        <label className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+          Pausar o foco depois de
+          <input
+            type="number"
+            min={0}
+            max={240}
+            value={inatividade}
+            onChange={(e) => setInatividade(e.target.value)}
+            onBlur={() => {
+              const minutos = Math.max(0, Math.round(Number(inatividade) || 0));
+              setInatividade(String(minutos));
+              gravarConfig(CHAVE_INATIVIDADE, String(minutos));
+            }}
+            className="w-16 rounded-lg border border-linha bg-cartao px-2 py-1 text-right text-[15px] outline-none focus:border-destaque"
+          />
+          minutos sem usar o computador
+        </label>
+        <p className="mt-1 text-sm text-suave">
+          O tempo parado não entra nas horas. Use 0 para desligar. No Linux com Wayland o sistema não informa a
+          inatividade.
+        </p>
 
         <h3 className="mt-7 text-[15px] font-semibold">Prioridades</h3>
         <EditorPrioridades />

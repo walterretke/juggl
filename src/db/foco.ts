@@ -10,7 +10,17 @@ export interface Foco {
 }
 
 /** Por que uma sessão de foco terminou; fica gravado no evento foco_fim. */
-export type MotivoFim = "pausa" | "troca" | "concluido" | "app_fechado" | "repouso";
+export type MotivoFim = "pausa" | "troca" | "concluido" | "app_fechado" | "repouso" | "inatividade";
+
+/** Minutos sem teclado nem mouse até o foco pausar sozinho (0 desliga). */
+export const CHAVE_INATIVIDADE = "pausa_inatividade_min";
+export const INATIVIDADE_PADRAO_MIN = 10;
+
+export async function lerLimiteInatividade(): Promise<number> {
+  const salvo = await lerConfig(CHAVE_INATIVIDADE);
+  const minutos = Number(salvo);
+  return salvo !== null && Number.isFinite(minutos) && minutos >= 0 ? minutos : INATIVIDADE_PADRAO_MIN;
+}
 
 /** Chave da config com o último sinal de vida do timer, para fechar sessões abertas. */
 const CHAVE_PULSO = "pulso_foco";

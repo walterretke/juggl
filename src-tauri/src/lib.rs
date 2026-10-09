@@ -1,3 +1,5 @@
+mod ocioso;
+
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -164,6 +166,35 @@ fn enviar_copiar() -> Result<(), String> {
     tecla(modificador, Direction::Press)?;
     tecla(copiar, Direction::Click)?;
     tecla(modificador, Direction::Release)
+}
+
+/// Segundos desde o último uso do teclado ou do mouse, ou `None` se o sistema não informa.
+#[tauri::command]
+fn tempo_ocioso() -> Option<u64> {
+    ocioso::segundos_ocioso()
+}
+
+/// Grava um CSV na pasta Downloads (ou na pasta pessoal, se o sistema não tiver uma) e devolve o caminho. Um nome já usado ganha
+/// " (2)", " (3)"... para não sobrescrever exportações antigas.
+#[tauri::command]
+fn salvar_csv(app: AppHandle, nome: String, conteudo: String) -> Result<String, String> {
+    if !nome.ends_with(".csv") || nome.contains(['/', '\\']) {
+        return Err(format!("Nome de arquivo inválido: {nome}"));
+    }
+    let pasta = app
+        .path()
+        .download_dir()
+        .or_else(|_| app.path().home_dir())
+        .map_err(|_| "Não encontrei a pasta Downloads nem a pasta pessoal.".to_string())?;
+    let base = nome.trim_end_matches(".csv");
+    let mut caminho = pasta.join(&nome);
+    let mut n = 2;
+    while caminho.exists() {
+        caminho = pasta.join(format!("{base} ({n}).csv"));
+        n += 1;
+    }
+    fs::write(&caminho, conteudo).map_err(|e| format!("Não foi possível gravar {}: {e}", caminho.display()))?;
+    Ok(caminho.to_string_lossy().into_owned())
 }
 
 /// Liga ou desliga o uso do texto selecionado (configuração salva no banco).
@@ -377,7 +408,9 @@ pub fn run() {
             caminho_backup,
             limpar_backups,
             atualizar_bandeja,
-            definir_usar_selecao
+            definir_usar_selecao,
+            tempo_ocioso,
+            salvar_csv
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

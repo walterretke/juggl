@@ -29,6 +29,13 @@ tauri-plugin-single-instance = "2"
 enigo = "0.6.1"
 
 
+# Tempo sem usar o computador, para pausar o foco sozinho (src/ocioso.rs).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_System_SystemInformation"] }
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+x11rb = { version = "0.13", features = ["screensaver"] }
+
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
 codegen-units = 1

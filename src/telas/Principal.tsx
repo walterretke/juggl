@@ -10,6 +10,7 @@ import {
   encerrarFoco,
   itemEmFoco,
   LIMITE_PULSO_MS,
+  lerLimiteInatividade,
   recuperarFocoAberto,
   registrarPulso,
   trocarFoco,
@@ -31,6 +32,7 @@ import {
 import { listarPrioridades, type Prioridade } from "../db/prioridades";
 import Agora from "./Agora";
 import Configuracoes from "./Configuracoes";
+import Horas from "./Horas";
 import ItemLista, { type CampoEditavel, type Menu } from "./ItemLista";
 import PedidoNota from "./PedidoNota";
 import { rotuloAtalho } from "./origens";
@@ -39,9 +41,18 @@ const MINUTO_MS = 60 * 1000;
 const MAX_DESFAZER = 30;
 
 /** Telas da janela principal: Agora (o foco) e as duas listas. */
-type Tela = "agora" | Lista;
-const TELAS: Tela[] = ["agora", "inbox", "a_fazer"];
-const NOME_TELA: Record<Tela, string> = { agora: "Agora", inbox: "Caixa de entrada", a_fazer: "A fazer" };
+type Tela = "agora" | Lista | "horas";
+const TELAS: Tela[] = ["agora", "inbox", "a_fazer", "horas"];
+const NOME_TELA: Record<Tela, string> = {
+  agora: "Agora",
+  inbox: "Caixa de entrada",
+  a_fazer: "A fazer",
+  horas: "Horas da semana",
+};
+
+function ehLista(tela: Tela): tela is Lista {
+  return tela === "inbox" || tela === "a_fazer";
+}
 const MAX_PROXIMAS = 3;
 const MAX_TITULO_BANDEJA = 40;
 
@@ -120,7 +131,7 @@ export default function Principal() {
         listarPrioridades(),
       ]);
       setPrioridades(opcoes);
-      const lidos = lista === "agora" ? [] : lista === "a_fazer" ? aFazer : await listarItens(lista);
+      const lidos = !ehLista(lista) ? [] : lista === "a_fazer" ? aFazer : await listarItens(lista);
       setFoco(emFoco);
       setProximas(aFazer.slice(0, MAX_PROXIMAS));
       setItens(lidos);
@@ -200,6 +211,16 @@ export default function Principal() {
         return;
       }
       ultimoPulso.current = agoraMs;
+      // Muito tempo sem teclado nem mouse: pausa no momento do último uso.
+      const limiteMin = await lerLimiteInatividade();
+      const ociosoS = limiteMin > 0 ? await invoke<number | null>("tempo_ocioso").catch(() => null) : null;
+      if (foco && ociosoS !== null && ociosoS >= limiteMin * 60) {
+        const fim = Math.max(new Date(foco.inicio).getTime(), agoraMs - ociosoS * 1000);
+        await encerrarFoco(foco, "inatividade", null, new Date(fim).toISOString());
+        mostrarAviso(`Pausei o foco: ${Math.round(ociosoS / 60)} min sem usar o computador. Esse tempo não contou.`);
+        await carregar();
+        return;
+      }
       await registrarPulso();
       const sessao = agoraMs - new Date(foco!.inicio).getTime();
       await invoke("atualizar_bandeja", { foco: `${titulo} · ${formatarDuracao(sessao)}` });
@@ -372,7 +393,9 @@ export default function Principal() {
 
   const total = itens?.length ?? 0;
   const subtitulo =
-    lista === "agora"
+    lista === "horas"
+      ? "Tempo em foco por projeto e por dia, pronto para o apontamento."
+      : lista === "agora"
       ? foco
         ? "Uma coisa por vez. Interrupções viram captura."
         : "Escolha o que fazer agora."
@@ -429,7 +452,7 @@ export default function Principal() {
   function alvoDeArrasto(destino: Tela) {
     return {
       onDragOver: (e: React.DragEvent) => {
-        if (!e.dataTransfer.types.includes("text/juggl-item")) return;
+        if (destino === "horas" || !e.dataTransfer.types.includes("text/juggl-item")) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = "move";
         setAlvoArrasto(destino);
@@ -441,7 +464,7 @@ export default function Principal() {
         const item = itens?.find((i) => i.id === e.dataTransfer.getData("text/juggl-item"));
         if (!item) return;
         if (destino === "agora") focar(item);
-        else if (destino !== lista)
+        else if (ehLista(destino) && destino !== lista)
           aplicar(item, { status: destino }, destino === "inbox" ? "Voltou para a caixa de entrada" : "Movido para A fazer");
       },
     };
@@ -484,7 +507,7 @@ export default function Principal() {
             {l === "agora" ? (
               foco && <span title="Algo em foco" className="size-2 rounded-full bg-destaque" />
             ) : (
-              <span className="text-[13px] font-normal tabular-nums text-apagado">{contagem[l] || ""}</span>
+              ehLista(l) && <span className="text-[13px] font-normal tabular-nums text-apagado">{contagem[l] || ""}</span>
             )}
           </button>
         ))}
@@ -523,7 +546,7 @@ export default function Principal() {
               }`}
             >
               {NOME_TELA[l]}{" "}
-              {l !== "agora" && <span className="tabular-nums text-apagado">{contagem[l] || ""}</span>}
+              {ehLista(l) && <span className="tabular-nums text-apagado">{contagem[l] || ""}</span>}
             </button>
           ))}
           <button
@@ -552,6 +575,8 @@ export default function Principal() {
             </p>
           )}
 
+          {lista === "horas" && <Horas versao={`${foco?.item.id}-${foco?.inicio}`} aoAvisar={mostrarAviso} />}
+
           {lista === "agora" && (
             <Agora foco={foco} proximas={proximas} aoFocar={focar} aoPausar={pausar} aoConcluir={concluirFoco} />
           )}
@@ -563,7 +588,7 @@ export default function Principal() {
                 item={item}
                 indice={i}
                 ativo={i === selecionado}
-                lista={lista === "agora" ? "inbox" : lista}
+                lista={ehLista(lista) ? lista : "inbox"}
                 agora={agora}
                 prioridades={prioridades}
                 menu={i === selecionado ? menu : null}
@@ -623,7 +648,9 @@ export default function Principal() {
               )}
             </span>
           ) : (
-            lista === "agora" ? (
+            lista === "horas" ? (
+              <Dica teclas="Tab">trocar tela</Dica>
+            ) : lista === "agora" ? (
               <>
                 <Dica teclas="P">pausar</Dica>
                 <Dica teclas="X">concluir</Dica>
