@@ -6,12 +6,13 @@ export const NOME_ORIGEM: Record<string, string> = {
   manual: "Manual",
 };
 
+/** Cor do marcador de origem (bolinha + texto) nas listas e na captura. */
 export const COR_ORIGEM: Record<string, string> = {
-  teams: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-200",
-  jira: "bg-sky-100 text-sky-800 dark:bg-sky-900/60 dark:text-sky-200",
-  servicenow: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200",
-  devops: "bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200",
-  manual: "bg-neutral-200 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200",
+  teams: "bg-violet-500",
+  jira: "bg-sky-500",
+  servicenow: "bg-emerald-500",
+  devops: "bg-blue-600",
+  manual: "bg-stone-400",
 };
 
 /** "Ctrl+Shift+Space" → "Ctrl+Shift+Espaço" para mostrar na tela. */
