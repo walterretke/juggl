@@ -6,7 +6,7 @@ import { BOLINHA_PRIORIDADE, ETIQUETA_PRIORIDADE } from "./cores";
 import Icone, { type NomeIcone } from "./Icone";
 import { COR_ORIGEM, NOME_ORIGEM } from "./origens";
 
-export type Menu = "prazo" | "prioridade";
+export type Menu = "prazo" | "prometido" | "prioridade";
 export type CampoEditavel = "prazo" | "projeto" | "pessoa" | "titulo";
 
 export interface AcoesItem {
@@ -18,6 +18,8 @@ export interface AcoesItem {
   abrirLink: () => void;
   editar: (campo: CampoEditavel) => void;
   definirPrazo: (prazo: string | null) => void;
+  definirPrometido: (data: string | null) => void;
+  cobrar: () => void;
   definirPrioridade: (id: string | null) => void;
   abrirMenu: (menu: Menu | null) => void;
 }
@@ -39,6 +41,13 @@ function classePrazo(texto: string): string {
   if (texto.startsWith("atrasado")) return "font-semibold text-atraso";
   if (texto === "hoje") return "font-semibold text-destaque";
   return "text-suave";
+}
+
+/** "prometido sexta", em vermelho se a promessa vence hoje ou já passou. */
+function classePromessa(texto: string): string {
+  if (texto.startsWith("atrasado")) return "font-semibold text-atraso";
+  if (texto === "hoje") return "font-semibold text-destaque";
+  return "";
 }
 
 function maiuscula(texto: string): string {
@@ -88,6 +97,7 @@ function Campo({ texto, vazio, titulo, aoClicar }: { texto: string | null; vazio
 /** Uma linha das listas, com ações clicáveis e arrastável para a barra lateral. */
 export default function ItemLista({ item, indice, ativo, lista, agora, prioridades, menu, acoes, children }: Props) {
   const prazo = item.prazo ? descreverPrazo(item.prazo, agora) : null;
+  const promessa = item.prometido_para ? descreverPrazo(item.prometido_para, agora) : null;
   const hoje = dataLocalIso(agora);
   const amanha = dataLocalIso(new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() + 1));
   const extras = [
@@ -136,6 +146,11 @@ export default function ItemLista({ item, indice, ativo, lista, agora, prioridad
             >
               {item.titulo}
             </span>
+            {item.dia_planejado === hoje && (
+              <span title="Escolhido no ritual da manhã" className="shrink-0 rounded-full bg-destaque-claro px-2 text-xs font-semibold text-destaque-tinta">
+                Do dia
+              </span>
+            )}
             {item.status === "pausado" && (
               <span className="shrink-0 rounded-full bg-etiqueta px-2 text-xs font-semibold text-tinta-2">Pausado</span>
             )}
@@ -159,6 +174,24 @@ export default function ItemLista({ item, indice, ativo, lista, agora, prioridad
               className={`size-2 shrink-0 rounded-full ${COR_ORIGEM[item.origem] ?? COR_ORIGEM.manual}`}
             />
             <Campo texto={item.pessoa} vazio="+ quem pediu" titulo="Quem pediu (@)" aoClicar={() => acoes.editar("pessoa")} />
+            {item.cobrancas > 0 && (
+              <span className="shrink-0 font-semibold text-atraso" title="Cobranças registradas com B">
+                cobrou {item.cobrancas}×
+              </span>
+            )}
+            {promessa && (
+              <button
+                type="button"
+                title="Data que você prometeu (M)"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  acoes.abrirMenu("prometido");
+                }}
+                className={`-mx-1 shrink-0 rounded px-1 hover:bg-etiqueta ${classePromessa(promessa)}`}
+              >
+                prometido {promessa}
+              </button>
+            )}
             <Campo texto={item.projeto} vazio="+ projeto" titulo="Projeto (#)" aoClicar={() => acoes.editar("projeto")} />
             {extras.length > 0 && <span className="truncate">{extras.join(" · ")}</span>}
           </div>
@@ -173,7 +206,8 @@ export default function ItemLista({ item, indice, ativo, lista, agora, prioridad
           )}
           <Acao icone="foco" titulo={item.status === "pausado" ? "Retomar o foco (F)" : "Focar agora (F)"} aoClicar={acoes.focar} />
           {!item.prioridade && <Acao icone="bandeira" titulo="Prioridade" aoClicar={() => acoes.abrirMenu("prioridade")} />}
-          {!item.prazo && <Acao icone="calendario" titulo="Prazo (P)" aoClicar={() => acoes.abrirMenu("prazo")} />}
+          {!item.prazo && <Acao icone="calendario" titulo="Prazo e promessa (P, M)" aoClicar={() => acoes.abrirMenu("prazo")} />}
+          <Acao icone="cobrar" titulo="Cobrou de novo (B)" aoClicar={acoes.cobrar} />
           {item.link && <Acao icone="link" titulo="Abrir o link (O)" aoClicar={acoes.abrirLink} />}
           <Acao icone="arquivar" titulo="Arquivar (E)" aoClicar={acoes.arquivar} />
         </div>
@@ -241,31 +275,58 @@ export default function ItemLista({ item, indice, ativo, lista, agora, prioridad
                 ))}
               </ul>
             ) : (
-              <div>
-                <div className="flex gap-1.5 px-1 pt-1">
-                  {[
-                    { nome: "Sem prazo", valor: null },
-                    { nome: "Hoje", valor: hoje },
-                    { nome: "Amanhã", valor: amanha },
-                  ].map((o) => (
-                    <button
-                      key={o.nome}
-                      type="button"
-                      onClick={() => acoes.definirPrazo(o.valor)}
-                      className={`rounded-full px-3 py-1 text-[13px] ${
-                        item.prazo === o.valor ? "bg-destaque font-semibold text-folha" : "bg-etiqueta text-tinta-2 hover:text-tinta"
-                      }`}
-                    >
-                      {o.nome}
-                    </button>
-                  ))}
-                </div>
-                <Calendario valor={item.prazo} aoEscolher={acoes.definirPrazo} aoFechar={() => acoes.abrirMenu(null)} />
-              </div>
+              <MenuData item={item} menu={menu} hoje={hoje} amanha={amanha} acoes={acoes} />
             )}
           </div>
         </>
       )}
     </li>
+  );
+}
+
+/** Popover de datas: o prazo ou a data prometida para quem pediu, com abas para trocar. */
+function MenuData({ item, menu, hoje, amanha, acoes }: { item: Item; menu: Menu; hoje: string; amanha: string; acoes: AcoesItem }) {
+  const prometido = menu === "prometido";
+  const valor = prometido ? item.prometido_para : item.prazo;
+  const definir = prometido ? acoes.definirPrometido : acoes.definirPrazo;
+  const opcoes = [
+    { nome: prometido ? "Não prometi" : "Sem prazo", valor: null as string | null },
+    { nome: "Hoje", valor: hoje },
+    { nome: "Amanhã", valor: amanha },
+  ];
+  if (prometido && item.prazo && item.prazo !== hoje && item.prazo !== amanha) {
+    opcoes.push({ nome: "Igual ao prazo", valor: item.prazo });
+  }
+  const aba = (alvo: Menu, nome: string) => (
+    <button
+      type="button"
+      onClick={() => acoes.abrirMenu(alvo)}
+      className={`flex-1 rounded-md px-3 py-1 text-[13px] ${menu === alvo ? "bg-cartao font-semibold shadow-sm" : "text-suave hover:text-tinta"}`}
+    >
+      {nome}
+    </button>
+  );
+  return (
+    <div className="w-72">
+      <div className="mx-1 flex gap-1 rounded-lg bg-etiqueta p-0.5">
+        {aba("prazo", "Prazo")}
+        {aba("prometido", item.pessoa ? `Prometi a ${item.pessoa}` : "Prometi para")}
+      </div>
+      <div className="flex flex-wrap gap-1.5 px-1 pt-2">
+        {opcoes.map((o) => (
+          <button
+            key={o.nome}
+            type="button"
+            onClick={() => definir(o.valor)}
+            className={`rounded-full px-3 py-1 text-[13px] ${
+              valor === o.valor ? "bg-destaque font-semibold text-folha" : "bg-etiqueta text-tinta-2 hover:text-tinta"
+            }`}
+          >
+            {o.nome}
+          </button>
+        ))}
+      </div>
+      <Calendario key={menu} valor={valor} aoEscolher={definir} aoFechar={() => acoes.abrirMenu(null)} />
+    </div>
   );
 }

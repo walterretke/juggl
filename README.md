@@ -64,6 +64,18 @@ Pelo teclado:
 - A bandeja mostra o item em foco e há quanto tempo, com a opção Pausar.
 - Sem teclado nem mouse por 10 minutos (ajustável em Configurações, 0 desliga), o foco pausa sozinho e o tempo parado não conta. No Linux isso funciona no X11; no Wayland a pausa automática fica desligada.
 
+## Ritual da manhã
+
+- Na primeira abertura do dia, com algo pendente, o Juggl abre o **Ritual da manhã**: o que vence até amanhã (prazo ou promessa), o que alguém cobrou, o que ficou pausado, o resto de A fazer e a caixa de entrada.
+- Escolha até 3 para o dia com clique ou `Espaço` (setas andam) e aperte **Começar o dia** (`Enter`). As escolhidas ganham a etiqueta "Do dia" e ficam no topo de A fazer e das próximas do Agora.
+- Dá para pular. Se às 10h o ritual ainda não foi feito, o app lembra uma vez, com um aviso no topo.
+
+## Quem está cobrando
+
+- `B` (ou o sininho do item, ou o botão no Agora) registra que quem pediu **cobrou de novo**. O item mostra "cobrou 2×", sobe em A fazer e entra no grupo "Alguém cobrou" do ritual. `Z` desfaz.
+- `M` (ou clicar no prazo e escolher a aba "Prometi a…") guarda a data que você **prometeu** para quem pediu, separada do prazo. Ela aparece como "prometido sexta" e fica vermelha no dia e depois.
+- A tela **Pessoas** lista quem pediu o quê, com busca (`/`), pedidos abertos e cobranças. **Copiar resumo** gera uma mensagem pronta para colar no Teams com o status de cada pedido.
+
 ## Horas da semana
 
 - A tela **Horas da semana** soma o tempo em foco por projeto e por dia (segunda a domingo), com `‹` `›` para trocar de semana. Clicar num projeto mostra os itens.

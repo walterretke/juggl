@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { formatarDuracao } from "../captura/datas";
+import { dataLocalIso, formatarDuracao } from "../captura/datas";
 import { interpretarPrazo } from "../captura/parser";
 import { agendarBackupDiario } from "../db/backup";
 import { ATALHO_PADRAO, lerConfig } from "../db/config";
@@ -24,29 +24,35 @@ import {
   desfazerAlteracao,
   listarItens,
   listarSugestoes,
+  registrarCobranca,
   type Alteracao,
   type Item,
   type Lista,
   type Mudancas,
 } from "../db/itens";
 import { listarPrioridades, type Prioridade } from "../db/prioridades";
+import { deveAbrirRitual, deveLembrarRitual, ritualFeitoHoje } from "../db/ritual";
 import Agora from "./Agora";
 import Configuracoes from "./Configuracoes";
 import Horas from "./Horas";
 import ItemLista, { type CampoEditavel, type Menu } from "./ItemLista";
 import PedidoNota from "./PedidoNota";
+import Pessoas from "./Pessoas";
+import Ritual from "./Ritual";
 import { rotuloAtalho } from "./origens";
 
 const MINUTO_MS = 60 * 1000;
 const MAX_DESFAZER = 30;
 
-/** Telas da janela principal: Agora (o foco) e as duas listas. */
-type Tela = "agora" | Lista | "horas";
-const TELAS: Tela[] = ["agora", "inbox", "a_fazer", "horas"];
+/** Telas da janela principal: Agora (o foco), o ritual, as duas listas, Pessoas e Horas. */
+type Tela = "agora" | "ritual" | Lista | "pessoas" | "horas";
+const TELAS: Tela[] = ["agora", "ritual", "inbox", "a_fazer", "pessoas", "horas"];
 const NOME_TELA: Record<Tela, string> = {
   agora: "Agora",
+  ritual: "Ritual da manhã",
   inbox: "Caixa de entrada",
   a_fazer: "A fazer",
+  pessoas: "Pessoas",
   horas: "Horas da semana",
 };
 
@@ -119,28 +125,37 @@ export default function Principal() {
   const [erro, setErro] = useState<string | null>(null);
   const [agora, setAgora] = useState(() => new Date());
   const [prioridades, setPrioridades] = useState<Prioridade[]>([]);
+  /** Aumenta a cada recarga, para as telas com dados próprios (Ritual, Pessoas) recarregarem. */
+  const [versao, setVersao] = useState(0);
+  const [ritualFeito, setRitualFeito] = useState(true);
+  const [lembreteRitual, setLembreteRitual] = useState(false);
   const desfazer = useRef<Alteracao[]>([]);
   const timerAviso = useRef<number | undefined>(undefined);
 
   const carregar = useCallback(async () => {
     try {
-      const [emFoco, aFazer, total, opcoes] = await Promise.all([
+      const [emFoco, aFazer, total, opcoes, feito] = await Promise.all([
         itemEmFoco(),
         listarItens("a_fazer"),
         contarPorLista(),
         listarPrioridades(),
+        ritualFeitoHoje(),
       ]);
+      setRitualFeito(feito);
       setPrioridades(opcoes);
       const lidos = !ehLista(lista) ? [] : lista === "a_fazer" ? aFazer : await listarItens(lista);
       setFoco(emFoco);
       setProximas(aFazer.slice(0, MAX_PROXIMAS));
       setItens(lidos);
       setContagem(total);
-      // Ao abrir o app, começa no Agora se tiver algo em foco.
+      // Ao abrir o app: primeira vez no dia com algo pendente abre o ritual;
+      // senão começa no Agora se tiver algo em foco.
       if (primeiraCarga.current) {
         primeiraCarga.current = false;
-        if (emFoco) setLista("agora");
+        if (total.inbox + total.a_fazer > 0 && (await deveAbrirRitual())) setLista("ritual");
+        else if (emFoco) setLista("agora");
       }
+      setVersao((v) => v + 1);
       setSelecionado((s) => Math.min(s, Math.max(lidos.length - 1, 0)));
       setAgora(new Date());
     } catch (e) {
@@ -166,6 +181,21 @@ export default function Principal() {
       .then((salvo) => invoke("definir_usar_selecao", { usar: salvo !== "nao" }))
       .catch((e) => setErro(String(e)));
   }, []);
+
+  // O dia virou com o app aberto: abre o ritual. Depois das 10h sem ritual, lembra uma vez.
+  const diaAtual = dataLocalIso(agora);
+  useEffect(() => {
+    if (!pronto) return;
+    deveAbrirRitual()
+      .then((abrir) => abrir && contagem.inbox + contagem.a_fazer > 0 && setLista("ritual"))
+      .catch(() => {});
+  }, [diaAtual]);
+  useEffect(() => {
+    if (!pronto || ritualFeito) return;
+    deveLembrarRitual(agora)
+      .then((lembrar) => lembrar && setLembreteRitual(true))
+      .catch(() => {});
+  }, [agora, pronto, ritualFeito]);
 
   useEffect(() => agendarBackupDiario((e) => setErro(`Backup diário falhou: ${e}`)), []);
 
@@ -251,6 +281,19 @@ export default function Principal() {
     [carregar],
   );
 
+  /** "Cobrou de novo": registra a cobrança; dá para desfazer com Z. */
+  async function cobrar(item: Item) {
+    try {
+      const alteracao = await registrarCobranca(item);
+      desfazer.current = [...desfazer.current, alteracao].slice(-MAX_DESFAZER);
+      const vezes = item.cobrancas + 1;
+      mostrarAviso(`${item.pessoa ?? "Cobrança"} ${item.pessoa ? "cobrou" : "registrada"}: ${vezes}× neste item.`, true);
+      await carregar();
+    } catch (e) {
+      setErro(String(e));
+    }
+  }
+
   async function desfazerUltima() {
     const ultima = desfazer.current.pop();
     if (!ultima) {
@@ -331,6 +374,8 @@ export default function Principal() {
     function aoTeclar(e: KeyboardEvent) {
       // # e @ podem vir com AltGr (Ctrl+Alt no Windows) em alguns teclados.
       if (edicao || configAberta || pedidoNota || menu || ((e.ctrlKey || e.metaKey || e.altKey) && e.key !== "#" && e.key !== "@")) return;
+      // Digitando num campo (busca, código do projeto): as letras são texto, não atalhos.
+      if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select")) return;
       const item = itens?.[selecionado];
       const tecla = e.key;
 
@@ -354,6 +399,7 @@ export default function Principal() {
           " ": () => pausar(),
           x: () => concluirFoco(),
           o: () => foco?.item.link && openUrl(foco.item.link),
+          b: () => foco && cobrar(foco.item),
         });
         proximas.forEach((proxima, i) => (acoes[String(i + 1)] = () => focar(proxima)));
       } else if (item) {
@@ -366,6 +412,8 @@ export default function Principal() {
           "#": () => iniciarEdicao("projeto", item),
           "@": () => iniciarEdicao("pessoa", item),
           r: () => iniciarEdicao("titulo", item),
+          b: () => cobrar(item),
+          m: () => setMenu("prometido"),
           o: () => item.link && openUrl(item.link),
         });
         // 1 a 9: prioridades na ordem das configurações; 0 tira a prioridade.
@@ -395,6 +443,10 @@ export default function Principal() {
   const subtitulo =
     lista === "horas"
       ? "Tempo em foco por projeto e por dia, pronto para o apontamento."
+      : lista === "ritual"
+      ? "O que vence, quem cobrou e o que ficou pausado. Escolha até 3 para hoje."
+      : lista === "pessoas"
+      ? "Tudo que cada pessoa pediu, para responder quem está cobrando."
       : lista === "agora"
       ? foco
         ? "Uma coisa por vez. Interrupções viram captura."
@@ -437,6 +489,11 @@ export default function Principal() {
         setMenu(null);
         aplicar(item, { prazo });
       },
+      definirPrometido: (prometido_para: string | null) => {
+        setMenu(null);
+        aplicar(item, { prometido_para }, prometido_para ? "Promessa anotada" : "Promessa removida");
+      },
+      cobrar: () => cobrar(item),
       definirPrioridade: (id: string | null) => {
         setMenu(null);
         aplicar(item, { prioridade_id: id });
@@ -452,7 +509,7 @@ export default function Principal() {
   function alvoDeArrasto(destino: Tela) {
     return {
       onDragOver: (e: React.DragEvent) => {
-        if (destino === "horas" || !e.dataTransfer.types.includes("text/juggl-item")) return;
+        if (!(destino === "agora" || ehLista(destino)) || !e.dataTransfer.types.includes("text/juggl-item")) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = "move";
         setAlvoArrasto(destino);
@@ -474,14 +531,14 @@ export default function Principal() {
     <button
       type="button"
       onClick={() => invoke("abrir_captura")}
-      title="Abre a mesma janela do atalho global"
+      title={`Abre a mesma janela do atalho global (${rotuloAtalho(atalho)})`}
       className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-suave hover:bg-folha hover:text-tinta"
     >
       <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true" className="shrink-0">
         <path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       </svg>
-      <span className="flex-1">Nova captura</span>
-      <kbd className="font-sans text-xs text-apagado">{rotuloAtalho(atalho)}</kbd>
+      <span className="flex-1 whitespace-nowrap">Nova captura</span>
+      <kbd className="truncate font-sans text-xs text-apagado">{rotuloAtalho(atalho)}</kbd>
     </button>
   );
 
@@ -506,6 +563,8 @@ export default function Principal() {
             {NOME_TELA[l]}
             {l === "agora" ? (
               foco && <span title="Algo em foco" className="size-2 rounded-full bg-destaque" />
+            ) : l === "ritual" ? (
+              !ritualFeito && <span title="Ainda não feito hoje" className="size-2 rounded-full border-[1.5px] border-destaque" />
             ) : (
               ehLista(l) && <span className="text-[13px] font-normal tabular-nums text-apagado">{contagem[l] || ""}</span>
             )}
@@ -569,16 +628,59 @@ export default function Principal() {
           )}
           {erro && <p className="mb-5 rounded-xl bg-atraso-claro px-4 py-3 text-sm text-atraso">Erro no banco: {erro}</p>}
 
+          {lembreteRitual && lista !== "ritual" && (
+            <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl bg-destaque-claro px-4 py-3 text-sm text-destaque-tinta">
+              <span className="flex-1 font-semibold">Já passou das 10h e o ritual de hoje não foi feito.</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setLembreteRitual(false);
+                  trocarLista("ritual");
+                }}
+                className="rounded-md bg-destaque px-3 py-1 font-semibold text-folha hover:opacity-90"
+              >
+                Fazer agora
+              </button>
+              <button type="button" onClick={() => setLembreteRitual(false)} className="rounded-md px-2 py-1 hover:bg-folha/50">
+                Hoje não
+              </button>
+            </div>
+          )}
+
           {itens?.length === 0 && lista === "inbox" && (
             <p className="mt-16 text-center text-[15px] text-apagado">
               Aperte {rotuloAtalho(atalho)} em qualquer janela para capturar um pedido.
             </p>
           )}
 
+          {lista === "ritual" && (
+            <Ritual
+              versao={versao}
+              aoComecar={(quantos) => {
+                setLembreteRitual(false);
+                mostrarAviso(quantos > 0 ? `Bom dia. As ${quantos} do dia estão no topo de A fazer.` : "Bom dia.");
+                trocarLista("agora");
+                carregar();
+              }}
+              aoPular={() => trocarLista(foco ? "agora" : "inbox")}
+            />
+          )}
+
+          {lista === "pessoas" && <Pessoas versao={versao} aoCobrar={cobrar} aoFocar={focar} aoAvisar={mostrarAviso} />}
+
           {lista === "horas" && <Horas versao={`${foco?.item.id}-${foco?.inicio}`} aoAvisar={mostrarAviso} />}
 
           {lista === "agora" && (
-            <Agora foco={foco} proximas={proximas} aoFocar={focar} aoPausar={pausar} aoConcluir={concluirFoco} />
+            <Agora
+              foco={foco}
+              proximas={proximas}
+              ritualFeito={ritualFeito}
+              aoFocar={focar}
+              aoPausar={pausar}
+              aoConcluir={concluirFoco}
+              aoCobrar={() => foco && cobrar(foco.item)}
+              aoAbrirRitual={() => trocarLista("ritual")}
+            />
           )}
 
           <ul className="flex flex-col gap-1.5 pb-6">
@@ -650,11 +752,26 @@ export default function Principal() {
           ) : (
             lista === "horas" ? (
               <Dica teclas="Tab">trocar tela</Dica>
+            ) : lista === "ritual" ? (
+              <>
+                <Dica teclas="↑ ↓">andar</Dica>
+                <Dica teclas="Espaço">escolher</Dica>
+                <Dica teclas="Enter">começar o dia</Dica>
+                <Dica teclas="Tab">trocar tela</Dica>
+              </>
+            ) : lista === "pessoas" ? (
+              <>
+                <Dica teclas="/">buscar</Dica>
+                <Dica teclas="↑ ↓">trocar pessoa (na busca)</Dica>
+                <Dica teclas="Z">desfazer</Dica>
+                <Dica teclas="Tab">trocar tela</Dica>
+              </>
             ) : lista === "agora" ? (
               <>
                 <Dica teclas="P">pausar</Dica>
                 <Dica teclas="X">concluir</Dica>
                 <Dica teclas="1 2 3">focar uma das próximas</Dica>
+                <Dica teclas="B">cobrou de novo</Dica>
                 <Dica teclas="O">abrir link</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
               </>
@@ -666,6 +783,8 @@ export default function Principal() {
                 <Dica teclas={prioridades.length > 1 ? `1–${Math.min(prioridades.length, 9)}` : "1"}>prioridade</Dica>
                 <Dica teclas="#">projeto</Dica>
                 <Dica teclas="@">quem pediu</Dica>
+                <Dica teclas="M">prometi para</Dica>
+                <Dica teclas="B">cobrou de novo</Dica>
                 <Dica teclas="X">concluir</Dica>
                 <Dica teclas="E">arquivar</Dica>
                 <Dica teclas="Z">desfazer</Dica>

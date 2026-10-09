@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { descreverPrazo, formatarCronometro, formatarDuracao } from "../captura/datas";
+import { dataLocalIso, descreverPrazo, formatarCronometro, formatarDuracao } from "../captura/datas";
 import type { Foco } from "../db/foco";
 import type { Item } from "../db/itens";
 import { COR_ORIGEM, NOME_ORIGEM } from "./origens";
@@ -7,13 +7,16 @@ import { COR_ORIGEM, NOME_ORIGEM } from "./origens";
 interface Props {
   foco: Foco | null;
   proximas: Item[];
+  ritualFeito: boolean;
   aoFocar: (item: Item) => void;
   aoPausar: () => void;
   aoConcluir: () => void;
+  aoCobrar: () => void;
+  aoAbrirRitual: () => void;
 }
 
 /** Tela "Agora": uma única coisa em destaque, o timer e as próximas três. */
-export default function Agora({ foco, proximas, aoFocar, aoPausar, aoConcluir }: Props) {
+export default function Agora({ foco, proximas, ritualFeito, aoFocar, aoPausar, aoConcluir, aoCobrar, aoAbrirRitual }: Props) {
   const [agora, setAgora] = useState(() => Date.now());
 
   useEffect(() => {
@@ -26,6 +29,9 @@ export default function Agora({ foco, proximas, aoFocar, aoPausar, aoConcluir }:
   const sessao = foco ? agora - new Date(foco.inicio).getTime() : 0;
   const meta = foco ? [foco.item.pessoa, foco.item.projeto, NOME_ORIGEM[foco.item.origem]].filter(Boolean) : [];
   if (foco?.item.origem === "manual") meta.pop();
+  const hoje = dataLocalIso(new Date(agora));
+  const cobranca = foco && foco.item.cobrancas > 0 ? `${foco.item.pessoa ?? "Já"} cobrou ${foco.item.cobrancas}×` : null;
+  const promessa = foco?.item.prometido_para ? `prometido ${descreverPrazo(foco.item.prometido_para, new Date(agora))}` : null;
 
   return (
     <div className="pb-6">
@@ -34,6 +40,9 @@ export default function Agora({ foco, proximas, aoFocar, aoPausar, aoConcluir }:
           <p className="text-xs font-semibold uppercase tracking-wider text-destaque">Fazendo agora</p>
           <h2 className="mt-2 font-titulo text-[28px] font-medium leading-tight tracking-tight">{foco.item.titulo}</h2>
           {meta.length > 0 && <p className="mt-1 text-[15px] text-suave">{meta.join(" · ")}</p>}
+          {(cobranca || promessa) && (
+            <p className="mt-1 text-sm font-semibold text-atraso">{[cobranca, promessa].filter(Boolean).join(" · ")}</p>
+          )}
 
           <p className="mt-6 font-titulo text-6xl font-medium tabular-nums tracking-tight" aria-live="off">
             {formatarCronometro(sessao)}
@@ -57,6 +66,14 @@ export default function Agora({ foco, proximas, aoFocar, aoPausar, aoConcluir }:
             >
               Concluir <kbd className="ml-1 font-sans font-normal opacity-70">X</kbd>
             </button>
+            <button
+              type="button"
+              onClick={aoCobrar}
+              title="Registra que quem pediu cobrou de novo"
+              className="rounded-lg px-4 py-2 text-sm text-suave hover:bg-etiqueta hover:text-tinta"
+            >
+              Cobrou de novo <kbd className="ml-1 font-sans font-normal text-apagado">B</kbd>
+            </button>
           </div>
         </section>
       ) : (
@@ -65,6 +82,15 @@ export default function Agora({ foco, proximas, aoFocar, aoPausar, aoConcluir }:
           <p className="mt-1 text-[15px] text-suave">
             Escolha uma das próximas com 1, 2 ou 3, ou aperte F em qualquer item de A fazer.
           </p>
+          {!ritualFeito && (
+            <button
+              type="button"
+              onClick={aoAbrirRitual}
+              className="mt-4 rounded-lg border border-linha px-4 py-2 text-sm font-semibold hover:bg-etiqueta"
+            >
+              Fazer o ritual da manhã
+            </button>
+          )}
         </section>
       )}
 
@@ -86,6 +112,9 @@ export default function Agora({ foco, proximas, aoFocar, aoPausar, aoConcluir }:
                 <span className="block truncate text-[15px] font-medium">{item.titulo}</span>
                 {item.nota_pausa && <span className="block truncate text-[13px] text-suave">Parou em: {item.nota_pausa}</span>}
               </span>
+              {item.dia_planejado === hoje && (
+                <span className="shrink-0 rounded-full bg-destaque-claro px-2 text-xs font-semibold text-destaque-tinta">Do dia</span>
+              )}
               {item.status === "pausado" && (
                 <span className="shrink-0 rounded-full bg-etiqueta px-2 text-xs font-semibold text-tinta-2">Pausado</span>
               )}

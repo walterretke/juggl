@@ -14,6 +14,10 @@ export interface Item {
   prioridade: string | null; // nome
   prioridade_cor: CorPrioridade | null;
   prazo: string | null;
+  /** Data que você prometeu para quem pediu (pode ser diferente do prazo). */
+  prometido_para: string | null;
+  /** Dia em que o item foi escolhido no ritual da manhã como uma das 3 do dia. */
+  dia_planejado: string | null;
   link: string | null;
   origem: string;
   id_externo: string | null;
@@ -27,10 +31,15 @@ export interface Item {
   nota_pausa: string | null;
   /** Tempo total em foco, somando as sessões já encerradas. */
   tempo_ms: number;
+  /** Quantas vezes quem pediu cobrou de novo (eventos `cobrado`). */
+  cobrancas: number;
+  ultima_cobranca: string | null;
 }
 
 /** Campos que a triagem pode mudar. */
-export type Mudancas = Partial<Pick<Item, "titulo" | "status" | "prioridade_id" | "prazo" | "pessoa_id" | "projeto_id">>;
+export type Mudancas = Partial<
+  Pick<Item, "titulo" | "status" | "prioridade_id" | "prazo" | "prometido_para" | "dia_planejado" | "pessoa_id" | "projeto_id">
+>;
 
 /** O que é preciso para desfazer uma mudança: os valores anteriores e os eventos gravados. */
 export interface Alteracao {
@@ -104,10 +113,12 @@ export async function criarItem(captura: Captura, duracaoMs: number | null): Pro
 const ORDEM: Record<Lista, string> = {
   // Caixa de entrada: mais antigos primeiro, para nada ficar esquecido no fundo.
   inbox: "item.criado_em",
-  // A fazer: prazo mais próximo primeiro (sem prazo no fim), depois prioridade.
-  a_fazer: `item.prazo IS NULL, item.prazo,
+  // A fazer: as 3 do dia (ritual) primeiro; depois prazo mais próximo (sem prazo no fim),
+  // prioridade e quem cobrou mais.
+  a_fazer: `item.dia_planejado IS NOT date('now', 'localtime'),
+            item.prazo IS NULL, item.prazo,
             prioridade.ordem IS NULL, prioridade.ordem,
-            item.criado_em`,
+            cobrancas DESC, item.criado_em`,
 };
 
 /** Status que aparecem em cada lista. Pausados voltam para A fazer, com a nota de onde parou. */
@@ -116,10 +127,11 @@ const STATUS_DA_LISTA: Record<Lista, string> = {
   a_fazer: "'a_fazer', 'pausado'",
 };
 
-/** SELECT de itens com pessoa, projeto, nota da última pausa e tempo em foco. */
+/** SELECT de itens com pessoa, projeto, nota da última pausa, tempo em foco e cobranças. */
 export const SELECT_ITEM = `
   SELECT item.id, item.titulo, item.status, item.prioridade_id, prioridade.nome AS prioridade,
-         prioridade.cor AS prioridade_cor, item.prazo, item.link, item.origem,
+         prioridade.cor AS prioridade_cor, item.prazo, item.prometido_para, item.dia_planejado,
+         item.link, item.origem,
          item.id_externo, item.criado_em, item.atualizado_em, item.pessoa_id, item.projeto_id,
          pessoa.apelido AS pessoa, projeto.nome AS projeto,
          CASE WHEN item.status = 'pausado' THEN
@@ -127,7 +139,9 @@ export const SELECT_ITEM = `
              WHERE e.item_id = item.id AND e.tipo = 'foco_fim' ORDER BY e.timestamp DESC LIMIT 1)
          END AS nota_pausa,
          COALESCE((SELECT SUM(json_extract(e.dados, '$.duracao_ms')) FROM evento e
-                    WHERE e.item_id = item.id AND e.tipo = 'foco_fim'), 0) AS tempo_ms
+                    WHERE e.item_id = item.id AND e.tipo = 'foco_fim'), 0) AS tempo_ms,
+         (SELECT COUNT(*) FROM evento e WHERE e.item_id = item.id AND e.tipo = 'cobrado') AS cobrancas,
+         (SELECT MAX(e.timestamp) FROM evento e WHERE e.item_id = item.id AND e.tipo = 'cobrado') AS ultima_cobranca
     FROM item
     LEFT JOIN pessoa ON pessoa.id = item.pessoa_id
     LEFT JOIN projeto ON projeto.id = item.projeto_id
@@ -148,7 +162,16 @@ export async function contarPorLista(): Promise<Record<Lista, number>> {
   return linha ?? { inbox: 0, a_fazer: 0 };
 }
 
-const CAMPOS_EDITAVEIS = ["titulo", "status", "prioridade_id", "prazo", "pessoa_id", "projeto_id"] as const;
+const CAMPOS_EDITAVEIS = [
+  "titulo",
+  "status",
+  "prioridade_id",
+  "prazo",
+  "prometido_para",
+  "dia_planejado",
+  "pessoa_id",
+  "projeto_id",
+] as const;
 
 export async function gravarCampos(id: string, campos: Mudancas): Promise<void> {
   const nomes = CAMPOS_EDITAVEIS.filter((c) => c in campos);
@@ -194,6 +217,12 @@ export async function alterarItem(item: Item, mudancas: Mudancas): Promise<Alter
     eventos.push(await registrarEvento(item.id, "concluido", { de: item.status }));
   }
   return { itemId: item.id, anterior, eventos };
+}
+
+/** "Cobrou de novo": registra a cobrança, que pesa na ordem de A fazer. Pode ser desfeita. */
+export async function registrarCobranca(item: Item): Promise<Alteracao> {
+  const evento = await registrarEvento(item.id, "cobrado", { pessoa_id: item.pessoa_id });
+  return { itemId: item.id, anterior: {}, eventos: [evento] };
 }
 
 export async function desfazerAlteracao(alteracao: Alteracao): Promise<void> {
