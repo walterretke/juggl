@@ -1,11 +1,17 @@
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use enigo::{Direction, Enigo, Key, Keyboard, Settings};
+use serde::Serialize;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent, Wry};
+use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
@@ -30,6 +36,14 @@ const BACKUPS_MANTIDOS: usize = 7;
 #[derive(Default)]
 struct AtalhoAtual(Mutex<Option<Shortcut>>);
 
+/// Se o atalho copia o texto selecionado na janela em uso para a descrição.
+/// Ligado por padrão; o front desliga conforme a configuração salva.
+struct UsarSelecao(AtomicBool);
+
+/// Quanto esperar o outro app colocar a seleção na área de transferência.
+const ESPERA_COPIA: Duration = Duration::from_millis(25);
+const TENTATIVAS_COPIA: u32 = 8;
+
 /// Itens do menu da bandeja que mudam com o foco.
 struct MenuFoco {
     foco: MenuItem<Wry>,
@@ -39,12 +53,20 @@ struct MenuFoco {
 const SEM_FOCO: &str = "Nada em foco";
 
 fn migrations() -> Vec<Migration> {
-    vec![Migration {
-        version: 1,
-        description: "inicial",
-        sql: include_str!("../migrations/0001_inicial.sql"),
-        kind: MigrationKind::Up,
-    }]
+    vec![
+        Migration {
+            version: 1,
+            description: "inicial",
+            sql: include_str!("../migrations/0001_inicial.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 2,
+            description: "prioridades",
+            sql: include_str!("../migrations/0002_prioridades.sql"),
+            kind: MigrationKind::Up,
+        },
+    ]
 }
 
 fn agora_ms() -> u64 {
@@ -54,16 +76,100 @@ fn agora_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// Mostra a captura sobre qualquer janela e avisa o front do momento do atalho,
-/// para medir a meta de 3 segundos.
+/// Enviado ao front quando a captura abre.
+#[derive(Clone, Serialize)]
+struct CapturaAberta {
+    /// Momento do atalho, para medir a meta de 3 segundos.
+    momento: u64,
+    /// Texto que estava selecionado na janela em uso, se havia.
+    selecao: Option<String>,
+}
+
+/// Mostra a captura sobre qualquer janela.
 fn mostrar_captura(app: &AppHandle) {
-    let momento = agora_ms();
+    abrir_captura_com(app, agora_ms(), None);
+}
+
+fn abrir_captura_com(app: &AppHandle, momento: u64, selecao: Option<String>) {
     if let Some(janela) = app.get_webview_window(JANELA_CAPTURA) {
         let _ = janela.center();
         let _ = janela.show();
         let _ = janela.set_focus();
-        let _ = janela.emit("captura:aberta", momento);
+        let _ = janela.emit("captura:aberta", CapturaAberta { momento, selecao });
     }
+}
+
+/// Pelo atalho global: antes de mostrar a captura, copia o que estiver selecionado
+/// na janela em uso. Com a cópia ligada, espera a tecla ser solta: no Linux (X11) o
+/// atalho prende o teclado enquanto está apertado e a janela em uso não receberia o
+/// comando de copiar. Roda fora da thread principal porque espera a cópia.
+fn capturar_pelo_atalho(app: &AppHandle, estado: ShortcutState) {
+    let usar_selecao = app.state::<UsarSelecao>().0.load(Ordering::Relaxed);
+    if !usar_selecao {
+        if estado == ShortcutState::Pressed {
+            abrir_captura_com(app, agora_ms(), None);
+        }
+        return;
+    }
+    if estado != ShortcutState::Released {
+        return;
+    }
+    let momento = agora_ms();
+    let app = app.clone();
+    thread::spawn(move || {
+        let selecao = copiar_selecao(&app);
+        abrir_captura_com(&app, momento, selecao);
+    });
+}
+
+/// Pede ao app em uso para copiar a seleção, lê o texto e devolve a área de
+/// transferência como estava. Sem seleção, nada muda e o resultado é `None`.
+fn copiar_selecao(app: &AppHandle) -> Option<String> {
+    let area = app.clipboard();
+    let antes = area.read_text().ok();
+    if let Err(e) = enviar_copiar() {
+        eprintln!("Não foi possível copiar a seleção: {e}");
+        return None;
+    }
+    let mut copiado = None;
+    for _ in 0..TENTATIVAS_COPIA {
+        thread::sleep(ESPERA_COPIA);
+        let agora = area.read_text().ok();
+        if agora.is_some() && agora != antes {
+            copiado = agora;
+            break;
+        }
+    }
+    let copiado = copiado?;
+    if let Some(texto) = antes {
+        let _ = area.write_text(texto);
+    }
+    let texto = copiado.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!texto.is_empty()).then_some(texto)
+}
+
+/// Simula o atalho de copiar. As teclas do atalho global ainda estão apertadas,
+/// então os modificadores são soltos antes. No Windows e no Linux usa Ctrl+Insert
+/// em vez de Ctrl+C: num terminal sem seleção, Ctrl+C interromperia o programa.
+fn enviar_copiar() -> Result<(), String> {
+    let mut teclado = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
+    let mut tecla = |k: Key, d: Direction| teclado.key(k, d).map_err(|e| e.to_string());
+    for modificador in [Key::Shift, Key::Alt, Key::Control, Key::Meta] {
+        tecla(modificador, Direction::Release)?;
+    }
+    #[cfg(target_os = "macos")]
+    let (modificador, copiar) = (Key::Meta, Key::Unicode('c'));
+    #[cfg(not(target_os = "macos"))]
+    let (modificador, copiar) = (Key::Control, Key::Insert);
+    tecla(modificador, Direction::Press)?;
+    tecla(copiar, Direction::Click)?;
+    tecla(modificador, Direction::Release)
+}
+
+/// Liga ou desliga o uso do texto selecionado (configuração salva no banco).
+#[tauri::command]
+fn definir_usar_selecao(estado: State<UsarSelecao>, usar: bool) {
+    estado.0.store(usar, Ordering::Relaxed);
 }
 
 fn mostrar_principal(app: &AppHandle) {
@@ -98,7 +204,11 @@ fn esconder_captura(app: AppHandle, devolver_foco: bool) {
 /// Registra o atalho global da captura (ex.: "Ctrl+Shift+Space"), trocando o anterior.
 /// Devolve erro legível se o atalho for inválido ou já estiver em uso por outro app.
 #[tauri::command]
-fn definir_atalho(app: AppHandle, estado: State<AtalhoAtual>, atalho: String) -> Result<(), String> {
+fn definir_atalho(
+    app: AppHandle,
+    estado: State<AtalhoAtual>,
+    atalho: String,
+) -> Result<(), String> {
     let novo: Shortcut = atalho
         .parse()
         .map_err(|e| format!("Atalho inválido \"{atalho}\": {e}"))?;
@@ -123,7 +233,8 @@ fn pasta_backups(app: &AppHandle) -> Result<PathBuf, String> {
         .app_config_dir()
         .map_err(|e| e.to_string())?
         .join(PASTA_BACKUPS);
-    fs::create_dir_all(&pasta).map_err(|e| format!("Não foi possível criar {}: {e}", pasta.display()))?;
+    fs::create_dir_all(&pasta)
+        .map_err(|e| format!("Não foi possível criar {}: {e}", pasta.display()))?;
     Ok(pasta)
 }
 
@@ -231,9 +342,7 @@ pub fn run() {
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _atalho, evento| {
-                    if evento.state() == ShortcutState::Pressed {
-                        mostrar_captura(app);
-                    }
+                    capturar_pelo_atalho(app, evento.state());
                 })
                 .build(),
         )
@@ -243,6 +352,7 @@ pub fn run() {
                 .build(),
         )
         .manage(AtalhoAtual::default())
+        .manage(UsarSelecao(AtomicBool::new(true)))
         .setup(|app| {
             criar_bandeja(app)?;
             if std::env::args().any(|a| a == ARG_CAPTURA) {
@@ -266,7 +376,8 @@ pub fn run() {
             definir_atalho,
             caminho_backup,
             limpar_backups,
-            atualizar_bandeja
+            atualizar_bandeja,
+            definir_usar_selecao
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

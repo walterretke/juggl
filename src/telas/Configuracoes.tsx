@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { backupAgora, listarBackups } from "../db/backup";
-import { gravarConfig } from "../db/config";
+import { gravarConfig, lerConfig } from "../db/config";
 import { atalhoDoEvento } from "./atalho";
+import EditorPrioridades from "./EditorPrioridades";
 import { rotuloAtalho } from "./origens";
 import { escolherTema, lerTema, NOME_TEMA, type Tema } from "../tema";
 
@@ -20,10 +21,18 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoFechar }: Props
   const [backups, setBackups] = useState<string[]>([]);
   const [mensagemBackup, setMensagemBackup] = useState<string | null>(null);
   const [tema, setTema] = useState<Tema | null>(null);
+  const [usarSelecao, setUsarSelecao] = useState(true);
 
   useEffect(() => {
     lerTema().then(setTema);
+    lerConfig("usar_selecao").then((v) => setUsarSelecao(v !== "nao"));
   }, []);
+
+  async function trocarUsarSelecao(usar: boolean) {
+    setUsarSelecao(usar);
+    await invoke("definir_usar_selecao", { usar });
+    await gravarConfig("usar_selecao", usar ? "sim" : "nao");
+  }
 
   async function trocarTema(novo: Tema) {
     setTema(novo);
@@ -70,7 +79,7 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoFechar }: Props
       className="fixed inset-0 z-10 flex items-start justify-center bg-black/30 pt-16"
       onMouseDown={(e) => e.target === e.currentTarget && aoFechar()}
     >
-      <section className="w-[min(560px,90vw)] rounded-2xl bg-folha p-7 text-tinta shadow-2xl ring-1 ring-linha">
+      <section className="w-[min(560px,90vw)] max-h-[88vh] overflow-y-auto rounded-2xl bg-folha p-7 text-tinta shadow-2xl ring-1 ring-linha">
         <header className="mb-5 flex items-center justify-between">
           <h2 className="font-titulo text-2xl font-medium tracking-tight">Configurações</h2>
           <button type="button" onClick={aoFechar} className="text-sm text-suave hover:text-tinta">
@@ -136,6 +145,25 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoFechar }: Props
             {mensagemAtalho.texto}
           </p>
         )}
+
+        <label className="mt-3 flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={usarSelecao}
+            onChange={(e) => trocarUsarSelecao(e.target.checked)}
+            className="mt-0.5 accent-destaque"
+          />
+          <span>
+            Usar o texto selecionado como descrição
+            <span className="block text-suave">
+              Ao apertar o atalho, o Juggl copia o que estiver selecionado na janela em uso e devolve a área de
+              transferência como estava.
+            </span>
+          </span>
+        </label>
+
+        <h3 className="mt-7 text-[15px] font-semibold">Prioridades</h3>
+        <EditorPrioridades />
 
         <h3 className="mt-7 text-[15px] font-semibold">Backup</h3>
         <p className="mt-1 text-sm text-suave">

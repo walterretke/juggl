@@ -1,25 +1,46 @@
 import { dataLocalIso, DIA_MS, inicioDoDia } from "./datas";
 import { ehUrl, reconhecerLink, type Origem } from "./links";
 
-export type Prioridade = "alta" | "media" | "baixa";
+/** Prioridade que a captura avançada reconhece no "!": id no banco e nome mostrado. */
+export interface OpcaoPrioridade {
+  id: string;
+  nome: string;
+}
+
+/** As três que o banco cria na primeira vez; o usuário pode mudar nas configurações. */
+export const PRIORIDADES_PADRAO: OpcaoPrioridade[] = [
+  { id: "alta", nome: "Alta" },
+  { id: "media", nome: "Média" },
+  { id: "baixa", nome: "Baixa" },
+];
 
 export interface Captura {
   titulo: string;
   pessoa: string | null;
   projeto: string | null;
-  prioridade: Prioridade | null;
+  prioridade: string | null; // id da prioridade
   prazo: string | null; // AAAA-MM-DD
   link: string | null;
   origem: Origem;
   idExterno: string | null;
 }
 
-const PRIORIDADES: Record<string, Prioridade> = {
-  alta: "alta",
-  media: "media",
-  média: "media",
-  baixa: "baixa",
-};
+/**
+ * "Média alta" e "media_alta" → "mediaalta": sem acento, espaço, _ nem maiúsculas.
+ * Serve para casar o que se digita depois de @, # e ! com nomes que têm espaço.
+ */
+export function normalizarNome(nome: string): string {
+  return nome
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[\s_]+/g, "")
+    .toLowerCase();
+}
+
+/** Como um nome com espaço é escrito depois de @ ou #: "Carla Dias" → "Carla_Dias". */
+export function nomeParaMarcacao(nome: string): string {
+  return nome.trim().replace(/\s+/g, "_");
+}
 
 // getDay(): 0 = domingo. Nomes curtos e longos, com e sem acento.
 const DIAS_SEMANA: Record<string, number> = {
@@ -68,11 +89,17 @@ export function interpretarPrazo(texto: string, hoje: Date): string | null {
 
 /**
  * Lê uma linha da captura. Marcações reconhecidas saem do título:
- * @pessoa, #projeto, !alta/!media/!baixa, >prazo e uma URL colada no texto.
+ * @pessoa, #projeto, !prioridade (pelo nome, sem acento), >prazo e uma URL colada no texto.
  * Vale a primeira de cada tipo; repetidas ou inválidas ficam no título como texto.
  * `linkDaAreaDeTransferencia` só é usado se o texto não tiver URL própria.
  */
-export function parseCaptura(texto: string, hoje: Date, linkDaAreaDeTransferencia: string | null = null): Captura {
+export function parseCaptura(
+  texto: string,
+  hoje: Date,
+  linkDaAreaDeTransferencia: string | null = null,
+  prioridades: OpcaoPrioridade[] = PRIORIDADES_PADRAO,
+): Captura {
+  const prioridadePorNome = new Map(prioridades.map((p) => [normalizarNome(p.nome), p.id]));
   const resultado: Captura = {
     titulo: "",
     pessoa: null,
@@ -102,8 +129,9 @@ export function parseCaptura(texto: string, hoje: Date, linkDaAreaDeTransferenci
       resultado.projeto = valor;
       continue;
     }
-    if (marca === "!" && !resultado.prioridade && valor.toLowerCase() in PRIORIDADES) {
-      resultado.prioridade = PRIORIDADES[valor.toLowerCase()];
+    const prioridade = marca === "!" && prioridadePorNome.get(normalizarNome(valor));
+    if (prioridade && !resultado.prioridade) {
+      resultado.prioridade = prioridade;
       continue;
     }
     if (marca === ">" && !resultado.prazo) {

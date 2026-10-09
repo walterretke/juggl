@@ -1,4 +1,5 @@
-import type { Captura, Prioridade } from "../captura/parser";
+import { normalizarNome, type Captura } from "../captura/parser";
+import type { CorPrioridade } from "./prioridades";
 import { getDb } from ".";
 import { agoraIso, novoId } from "./ids";
 
@@ -9,7 +10,9 @@ export interface Item {
   id: string;
   titulo: string;
   status: Status;
-  prioridade: Prioridade | null;
+  prioridade_id: string | null;
+  prioridade: string | null; // nome
+  prioridade_cor: CorPrioridade | null;
   prazo: string | null;
   link: string | null;
   origem: string;
@@ -27,7 +30,7 @@ export interface Item {
 }
 
 /** Campos que a triagem pode mudar. */
-export type Mudancas = Partial<Pick<Item, "titulo" | "status" | "prioridade" | "prazo" | "pessoa_id" | "projeto_id">>;
+export type Mudancas = Partial<Pick<Item, "titulo" | "status" | "prioridade_id" | "prazo" | "pessoa_id" | "projeto_id">>;
 
 /** O que é preciso para desfazer uma mudança: os valores anteriores e os eventos gravados. */
 export interface Alteracao {
@@ -36,23 +39,32 @@ export interface Alteracao {
   eventos: string[];
 }
 
-/** Pessoa pelo apelido do @ (sem diferenciar maiúsculas); cria se ainda não existe. */
-export async function buscarOuCriarPessoa(apelido: string): Promise<string> {
+/** Id do nome igual a `nome`, ignorando maiúsculas, acentos, espaços e _ ("@carla_dias" acha "Carla Dias"). */
+async function buscarPorNome(tabela: "pessoa" | "projeto", coluna: string, nome: string): Promise<string | null> {
   const db = await getDb();
-  const [existente] = await db.select<{ id: string }[]>("SELECT id FROM pessoa WHERE apelido = $1", [apelido]);
-  if (existente) return existente.id;
+  const linhas = await db.select<{ id: string; nome: string }[]>(`SELECT id, ${coluna} AS nome FROM ${tabela}`);
+  const alvo = normalizarNome(nome);
+  return linhas.find((l) => normalizarNome(l.nome) === alvo)?.id ?? null;
+}
+
+/** Pessoa pelo apelido do @ ou do campo Quem pediu; cria se ainda não existe. */
+export async function buscarOuCriarPessoa(apelido: string): Promise<string> {
+  const existente = await buscarPorNome("pessoa", "apelido", apelido);
+  if (existente) return existente;
+  const nome = apelido.trim().replace(/_/g, " ");
   const id = novoId();
-  await db.execute("INSERT INTO pessoa (id, nome, apelido) VALUES ($1, $2, $2)", [id, apelido]);
+  const db = await getDb();
+  await db.execute("INSERT INTO pessoa (id, nome, apelido) VALUES ($1, $2, $2)", [id, nome]);
   return id;
 }
 
-/** Projeto pelo nome do # (sem diferenciar maiúsculas); cria se ainda não existe. */
+/** Projeto pelo nome do # ou do campo Projeto; cria se ainda não existe. */
 export async function buscarOuCriarProjeto(nome: string): Promise<string> {
-  const db = await getDb();
-  const [existente] = await db.select<{ id: string }[]>("SELECT id FROM projeto WHERE nome = $1", [nome]);
-  if (existente) return existente.id;
+  const existente = await buscarPorNome("projeto", "nome", nome);
+  if (existente) return existente;
   const id = novoId();
-  await db.execute("INSERT INTO projeto (id, nome) VALUES ($1, $2)", [id, nome]);
+  const db = await getDb();
+  await db.execute("INSERT INTO projeto (id, nome) VALUES ($1, $2)", [id, nome.trim().replace(/_/g, " ")]);
   return id;
 }
 
@@ -65,7 +77,7 @@ export async function criarItem(captura: Captura, duracaoMs: number | null): Pro
   const agora = agoraIso();
 
   await db.execute(
-    `INSERT INTO item (id, titulo, status, prioridade, prazo, projeto_id, pessoa_id, link, origem, id_externo, criado_em, atualizado_em)
+    `INSERT INTO item (id, titulo, status, prioridade_id, prazo, projeto_id, pessoa_id, link, origem, id_externo, criado_em, atualizado_em)
      VALUES ($1, $2, 'inbox', $3, $4, $5, $6, $7, $8, $9, $10, $10)`,
     [
       id,
@@ -94,7 +106,7 @@ const ORDEM: Record<Lista, string> = {
   inbox: "item.criado_em",
   // A fazer: prazo mais próximo primeiro (sem prazo no fim), depois prioridade.
   a_fazer: `item.prazo IS NULL, item.prazo,
-            CASE item.prioridade WHEN 'alta' THEN 0 WHEN 'media' THEN 1 WHEN 'baixa' THEN 2 ELSE 3 END,
+            prioridade.ordem IS NULL, prioridade.ordem,
             item.criado_em`,
 };
 
@@ -106,7 +118,8 @@ const STATUS_DA_LISTA: Record<Lista, string> = {
 
 /** SELECT de itens com pessoa, projeto, nota da última pausa e tempo em foco. */
 export const SELECT_ITEM = `
-  SELECT item.id, item.titulo, item.status, item.prioridade, item.prazo, item.link, item.origem,
+  SELECT item.id, item.titulo, item.status, item.prioridade_id, prioridade.nome AS prioridade,
+         prioridade.cor AS prioridade_cor, item.prazo, item.link, item.origem,
          item.id_externo, item.criado_em, item.atualizado_em, item.pessoa_id, item.projeto_id,
          pessoa.apelido AS pessoa, projeto.nome AS projeto,
          CASE WHEN item.status = 'pausado' THEN
@@ -117,7 +130,8 @@ export const SELECT_ITEM = `
                     WHERE e.item_id = item.id AND e.tipo = 'foco_fim'), 0) AS tempo_ms
     FROM item
     LEFT JOIN pessoa ON pessoa.id = item.pessoa_id
-    LEFT JOIN projeto ON projeto.id = item.projeto_id`;
+    LEFT JOIN projeto ON projeto.id = item.projeto_id
+    LEFT JOIN prioridade ON prioridade.id = item.prioridade_id`;
 
 export async function listarItens(lista: Lista): Promise<Item[]> {
   const db = await getDb();
@@ -134,7 +148,7 @@ export async function contarPorLista(): Promise<Record<Lista, number>> {
   return linha ?? { inbox: 0, a_fazer: 0 };
 }
 
-const CAMPOS_EDITAVEIS = ["titulo", "status", "prioridade", "prazo", "pessoa_id", "projeto_id"] as const;
+const CAMPOS_EDITAVEIS = ["titulo", "status", "prioridade_id", "prazo", "pessoa_id", "projeto_id"] as const;
 
 export async function gravarCampos(id: string, campos: Mudancas): Promise<void> {
   const nomes = CAMPOS_EDITAVEIS.filter((c) => c in campos);

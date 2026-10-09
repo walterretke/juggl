@@ -64,6 +64,18 @@
   --color-atraso-claro: #3a2621;
 }
 
+/* `dark:` do Tailwind segue a mesma regra do tema acima. */
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-tema="claro"]) *) {
+      @slot;
+    }
+  }
+  &:where([data-tema="escuro"] *) {
+    @slot;
+  }
+}
+
 html,
 body {
   background: var(--color-folha);

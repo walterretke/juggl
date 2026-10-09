@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { interpretarPrazo, parseCaptura } from "./parser";
+import { interpretarPrazo, nomeParaMarcacao, normalizarNome, parseCaptura } from "./parser";
 
 // Quinta-feira, 8 de outubro de 2026, 14h (hora local).
 const HOJE = new Date(2026, 9, 8, 14, 0);
@@ -110,5 +110,33 @@ describe("interpretarPrazo", () => {
 
   it("vira o ano em dezembro", () => {
     expect(interpretarPrazo("5/1", new Date(2026, 11, 20))).toBe("2027-01-05");
+  });
+});
+
+describe("prioridades personalizadas", () => {
+  const minhas = [
+    { id: "p1", nome: "Urgente" },
+    { id: "p2", nome: "Pode esperar" },
+  ];
+  it("reconhece pelo nome, sem espaço nem acento", () => {
+    expect(parseCaptura("x !urgente", HOJE, null, minhas).prioridade).toBe("p1");
+    expect(parseCaptura("x !podeesperar", HOJE, null, minhas).prioridade).toBe("p2");
+  });
+  it("deixa no título uma prioridade que não existe", () => {
+    const c = parseCaptura("x !alta", HOJE, null, minhas);
+    expect(c.prioridade).toBeNull();
+    expect(c.titulo).toBe("x !alta");
+  });
+});
+
+describe("nomes com espaço", () => {
+  it("normaliza nome com espaço e com _ para o mesmo valor", () => {
+    expect(normalizarNome("Carla Dias")).toBe(normalizarNome("carla_dias"));
+    expect(normalizarNome("Migração")).toBe("migracao");
+  });
+  it("escreve nome com espaço como marcação e o parser lê inteiro", () => {
+    const c = parseCaptura(`x @${nomeParaMarcacao("Carla Dias")}`, HOJE);
+    expect(c.pessoa).toBe("Carla_Dias");
+    expect(c.titulo).toBe("x");
   });
 });

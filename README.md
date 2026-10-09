@@ -17,14 +17,20 @@ npm run tauri dev
 
 `Ctrl+Shift+Espaço` abre a captura sobre qualquer janela. Enter salva na caixa de entrada, Esc cancela.
 
+Se houver texto selecionado na janela em uso, ele vira a descrição. Para isso o Juggl simula o comando de copiar (Ctrl+Insert no Windows e no Linux, Cmd+C no macOS) e depois devolve a área de transferência como estava. Dá para desligar nas configurações. Limitações: no macOS o Juggl precisa da permissão de Acessibilidade; no Linux com Wayland não funciona; se a área de transferência tinha uma imagem, ela é trocada pelo texto copiado.
+
+O modo padrão é um formulário: descrição, quem pediu e projeto (com sugestões dos nomes já usados), prioridade e prazo (Hoje, Amanhã ou um calendário). Tab passa de um campo para o outro, as setas escolhem a prioridade e o prazo, e Enter salva de qualquer campo.
+
+`Ctrl+.` troca para o modo avançado, uma linha só com marcações (o modo escolhido fica salvo):
+
 | Marcação | Exemplo | Vira |
 | --- | --- | --- |
 | `@nome` | `@carlos` | quem pediu |
 | `#projeto` | `#migracao` | projeto |
-| `!prioridade` | `!alta`, `!media`, `!baixa` | prioridade |
+| `!prioridade` | `!alta`, `!media`, `!baixa` (ou o nome de uma prioridade criada) | prioridade |
 | `>prazo` | `>hoje`, `>amanha`, `>sexta`, `>15/10` | prazo |
 
-Um link do Teams, Jira, ServiceNow ou Azure DevOps na área de transferência é anexado com a origem reconhecida (o × remove). Tab completa `@` e `#` já usados.
+Um link do Teams, Jira, ServiceNow ou Azure DevOps na área de transferência é anexado com a origem reconhecida (o × remove). Tab completa `@` e `#` já usados; nomes com espaço viram `_` (`@Carla_Dias`).
 
 ## Triagem
 
@@ -35,7 +41,7 @@ A janela principal tem a tela **Agora** (o item em foco) e duas listas: **Caixa 
 | `↑` `↓` (ou `J` `K`) | navegar |
 | `Enter` | mover da caixa de entrada para A fazer |
 | `P` | prazo (`hoje`, `amanha`, `sexta`, `15/10`; vazio tira) |
-| `1` `2` `3` `0` | prioridade alta, média, baixa, sem |
+| `1` a `9`, `0` | prioridade na ordem das configurações, sem prioridade |
 | `#` / `@` | projeto / quem pediu |
 | `R` | renomear |
 | `X` / `E` | concluir / arquivar |
@@ -57,7 +63,7 @@ A janela principal tem a tela **Agora** (o item em foco) e duas listas: **Caixa 
 
 - Fechar a janela deixa o Juggl na bandeja do sistema, com o atalho ativo. O ícone tem o foco atual, Pausar, Capturar, Abrir o Juggl e Sair.
 - Abrir o Juggl de novo só traz a janela existente. `juggl --captura` abre direto a captura (útil no Linux com Wayland: ligue esse comando a um atalho do sistema).
-- `,` abre as configurações: tema (igual ao sistema, claro ou escuro), atalho da captura e backup na hora.
+- `,` abre as configurações: tema (igual ao sistema, claro ou escuro), atalho da captura, uso do texto selecionado, prioridades (renomear, cor, ordem, criar e remover) e backup na hora.
 - Todo dia uma cópia do banco vai para a subpasta `backups/`, guardando as 7 mais recentes.
 
 ## Testes

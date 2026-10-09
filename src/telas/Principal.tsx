@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { descreverPrazo, formatarDuracao, tempoParado } from "../captura/datas";
-import { interpretarPrazo, type Prioridade } from "../captura/parser";
+import { interpretarPrazo } from "../captura/parser";
 import { agendarBackupDiario } from "../db/backup";
 import { ATALHO_PADRAO, lerConfig } from "../db/config";
 import {
@@ -28,7 +28,9 @@ import {
   type Lista,
   type Mudancas,
 } from "../db/itens";
+import { listarPrioridades, type Prioridade } from "../db/prioridades";
 import Agora from "./Agora";
+import { ETIQUETA_PRIORIDADE } from "./cores";
 import Configuracoes from "./Configuracoes";
 import PedidoNota from "./PedidoNota";
 import { COR_ORIGEM, NOME_ORIGEM, rotuloAtalho } from "./origens";
@@ -57,7 +59,6 @@ const ROTULO_CAMPO: Record<CampoEditavel, string> = {
   titulo: "Título",
 };
 
-const PRIORIDADE_POR_TECLA: Record<string, Prioridade | null> = { "1": "alta", "2": "media", "3": "baixa", "0": null };
 
 interface Edicao {
   campo: CampoEditavel;
@@ -112,12 +113,19 @@ export default function Principal() {
   const [avisoAtalho, setAvisoAtalho] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [agora, setAgora] = useState(() => new Date());
+  const [prioridades, setPrioridades] = useState<Prioridade[]>([]);
   const desfazer = useRef<Alteracao[]>([]);
   const timerAviso = useRef<number | undefined>(undefined);
 
   const carregar = useCallback(async () => {
     try {
-      const [emFoco, aFazer, total] = await Promise.all([itemEmFoco(), listarItens("a_fazer"), contarPorLista()]);
+      const [emFoco, aFazer, total, opcoes] = await Promise.all([
+        itemEmFoco(),
+        listarItens("a_fazer"),
+        contarPorLista(),
+        listarPrioridades(),
+      ]);
+      setPrioridades(opcoes);
       const lidos = lista === "agora" ? [] : lista === "a_fazer" ? aFazer : await listarItens(lista);
       setFoco(emFoco);
       setProximas(aFazer.slice(0, MAX_PROXIMAS));
@@ -147,6 +155,13 @@ export default function Principal() {
       .catch((e) => setAvisoAtalho(String(e)));
   }, []);
 
+  // Usar o texto selecionado na captura: ligado, a menos que tenha sido desligado.
+  useEffect(() => {
+    lerConfig("usar_selecao")
+      .then((salvo) => invoke("definir_usar_selecao", { usar: salvo !== "nao" }))
+      .catch((e) => setErro(String(e)));
+  }, []);
+
   useEffect(() => agendarBackupDiario((e) => setErro(`Backup diário falhou: ${e}`)), []);
 
   // Fecha a sessão de foco que ficou aberta se o app foi fechado no meio dela.
@@ -160,9 +175,11 @@ export default function Principal() {
     if (!pronto) return;
     carregar();
     const parar = listen("item:criado", carregar);
+    const pararPrioridades = listen("prioridades:alteradas", carregar);
     const relogio = setInterval(() => setAgora(new Date()), MINUTO_MS);
     return () => {
       parar.then((f) => f());
+      pararPrioridades.then((f) => f());
       clearInterval(relogio);
     };
   }, [carregar, pronto]);
@@ -336,9 +353,9 @@ export default function Principal() {
           r: () => iniciarEdicao("titulo", item),
           o: () => item.link && openUrl(item.link),
         });
-        if (tecla in PRIORIDADE_POR_TECLA) {
-          acoes[tecla] = () => aplicar(item, { prioridade: PRIORIDADE_POR_TECLA[tecla] });
-        }
+        // 1 a 9: prioridades na ordem das configurações; 0 tira a prioridade.
+        acoes["0"] = () => aplicar(item, { prioridade_id: null });
+        prioridades.slice(0, 9).forEach((p, i) => (acoes[String(i + 1)] = () => aplicar(item, { prioridade_id: p.id })));
       }
 
       const acao = acoes[tecla] ?? acoes[tecla.toLowerCase()];
@@ -349,7 +366,7 @@ export default function Principal() {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [edicao, configAberta, pedidoNota, itens, selecionado, lista, aplicar, foco, proximas]);
+  }, [edicao, configAberta, pedidoNota, itens, selecionado, lista, aplicar, foco, proximas, prioridades]);
 
   // Mantém o item selecionado visível ao navegar pelo teclado.
   useEffect(() => {
@@ -514,11 +531,12 @@ export default function Principal() {
                         {item.status === "pausado" && (
                           <span className="shrink-0 rounded-full bg-etiqueta px-2 text-xs font-semibold text-tinta-2">Pausado</span>
                         )}
-                        {item.prioridade === "alta" && (
-                          <span className="shrink-0 rounded-full bg-atraso-claro px-2 text-xs font-semibold text-atraso">Alta</span>
-                        )}
-                        {item.prioridade === "media" && (
-                          <span className="shrink-0 rounded-full bg-etiqueta px-2 text-xs font-semibold text-tinta-2">Média</span>
+                        {item.prioridade && (
+                          <span
+                            className={`shrink-0 rounded-full px-2 text-xs font-semibold ${ETIQUETA_PRIORIDADE[item.prioridade_cor ?? "cinza"]}`}
+                          >
+                            {item.prioridade}
+                          </span>
                         )}
                       </div>
                       {meta && <div className="mt-0.5 truncate text-[13px] text-suave">{meta}</div>}
@@ -590,7 +608,7 @@ export default function Principal() {
                 {lista === "inbox" && <Dica teclas="Enter">mover para A fazer</Dica>}
                 <Dica teclas="F">focar</Dica>
                 <Dica teclas="P">prazo</Dica>
-                <Dica teclas="1 2 3">prioridade</Dica>
+                <Dica teclas={prioridades.length > 1 ? `1–${Math.min(prioridades.length, 9)}` : "1"}>prioridade</Dica>
                 <Dica teclas="#">projeto</Dica>
                 <Dica teclas="@">quem pediu</Dica>
                 <Dica teclas="X">concluir</Dica>
