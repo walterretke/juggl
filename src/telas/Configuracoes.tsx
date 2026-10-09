@@ -5,6 +5,7 @@ import { backupAgora, listarBackups } from "../db/backup";
 import { gravarConfig } from "../db/config";
 import { atalhoDoEvento } from "./atalho";
 import { rotuloAtalho } from "./origens";
+import { escolherTema, lerTema, NOME_TEMA, type Tema } from "../tema";
 
 interface Props {
   atalho: string;
@@ -18,6 +19,16 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoFechar }: Props
   const [mensagemAtalho, setMensagemAtalho] = useState<{ ok: boolean; texto: string } | null>(null);
   const [backups, setBackups] = useState<string[]>([]);
   const [mensagemBackup, setMensagemBackup] = useState<string | null>(null);
+  const [tema, setTema] = useState<Tema | null>(null);
+
+  useEffect(() => {
+    lerTema().then(setTema);
+  }, []);
+
+  async function trocarTema(novo: Tema) {
+    setTema(novo);
+    await escolherTema(novo);
+  }
 
   useEffect(() => {
     listarBackups().then(setBackups).catch((e) => setMensagemBackup(String(e)));
@@ -67,7 +78,23 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoFechar }: Props
           </button>
         </header>
 
-        <h3 className="text-[15px] font-semibold">Atalho da captura</h3>
+        <h3 className="text-[15px] font-semibold">Aparência</h3>
+        <div role="radiogroup" aria-label="Tema" className="mt-2 inline-flex rounded-lg bg-etiqueta p-1">
+          {(Object.keys(NOME_TEMA) as Tema[]).map((t) => (
+            <button
+              key={t}
+              type="button"
+              role="radio"
+              aria-checked={tema === t}
+              onClick={() => trocarTema(t)}
+              className={`rounded-md px-3 py-1.5 text-sm ${tema === t ? "bg-folha font-semibold shadow-sm" : "text-suave hover:text-tinta"}`}
+            >
+              {NOME_TEMA[t]}
+            </button>
+          ))}
+        </div>
+
+        <h3 className="mt-7 text-[15px] font-semibold">Atalho da captura</h3>
         <p className="mt-1 text-sm text-suave">
           Atual: <strong>{rotuloAtalho(atalho)}</strong>. Clique no campo e aperte a combinação nova.
         </p>

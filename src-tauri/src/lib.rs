@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, State, WindowEvent, Wry};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
@@ -29,6 +29,14 @@ const BACKUPS_MANTIDOS: usize = 7;
 /// Atalho global registrado no momento, para poder trocá-lo depois.
 #[derive(Default)]
 struct AtalhoAtual(Mutex<Option<Shortcut>>);
+
+/// Itens do menu da bandeja que mudam com o foco.
+struct MenuFoco {
+    foco: MenuItem<Wry>,
+    pausar: MenuItem<Wry>,
+}
+
+const SEM_FOCO: &str = "Nada em foco";
 
 fn migrations() -> Vec<Migration> {
     vec![Migration {
@@ -152,11 +160,28 @@ fn limpar_backups(app: AppHandle) -> Result<Vec<String>, String> {
         .collect())
 }
 
+/// Mostra na bandeja o item em foco e o tempo (ex.: "Relatório do AD · 0:42"),
+/// ou que não há nada em foco. O front chama a cada minuto e a cada troca.
+#[tauri::command]
+fn atualizar_bandeja(app: AppHandle, menu: State<MenuFoco>, foco: Option<String>) {
+    let texto = foco.as_deref().unwrap_or(SEM_FOCO);
+    let _ = menu.foco.set_text(texto);
+    let _ = menu.pausar.set_enabled(foco.is_some());
+    if let Some(bandeja) = app.tray_by_id("juggl") {
+        let dica = foco.map_or_else(|| "Juggl".to_string(), |f| format!("Juggl · {f}"));
+        let _ = bandeja.set_tooltip(Some(dica));
+    }
+}
+
 fn criar_bandeja(app: &tauri::App) -> tauri::Result<()> {
+    let foco = MenuItem::with_id(app, "foco", SEM_FOCO, false, None::<&str>)?;
+    let pausar = MenuItem::with_id(app, "pausar", "Pausar", false, None::<&str>)?;
+    let separador = PredefinedMenuItem::separator(app)?;
     let capturar = MenuItem::with_id(app, "capturar", "Capturar", true, None::<&str>)?;
     let abrir = MenuItem::with_id(app, "abrir", "Abrir o Juggl", true, None::<&str>)?;
     let sair = MenuItem::with_id(app, "sair", "Sair", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&capturar, &abrir, &sair])?;
+    let menu = Menu::with_items(app, &[&foco, &pausar, &separador, &capturar, &abrir, &sair])?;
+    app.manage(MenuFoco { foco, pausar });
 
     let mut bandeja = TrayIconBuilder::with_id("juggl")
         .tooltip("Juggl")
@@ -164,6 +189,10 @@ fn criar_bandeja(app: &tauri::App) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, evento| match evento.id().as_ref() {
             "capturar" => mostrar_captura(app),
+            // Quem pausa é o front, que grava a sessão no banco.
+            "pausar" => {
+                let _ = app.emit_to(JANELA_PRINCIPAL, "bandeja:pausar", ());
+            }
             "abrir" => mostrar_principal(app),
             "sair" => app.exit(0),
             _ => {}
@@ -236,7 +265,8 @@ pub fn run() {
             esconder_captura,
             definir_atalho,
             caminho_backup,
-            limpar_backups
+            limpar_backups,
+            atualizar_bandeja
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

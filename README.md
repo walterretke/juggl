@@ -28,7 +28,7 @@ Um link do Teams, Jira, ServiceNow ou Azure DevOps na área de transferência é
 
 ## Triagem
 
-A janela principal tem duas listas: **Caixa de entrada** (o que foi capturado) e **A fazer** (o que já foi triado, ordenado por prazo e prioridade). Tudo pelo teclado:
+A janela principal tem a tela **Agora** (o item em foco) e duas listas: **Caixa de entrada** (o que foi capturado) e **A fazer** (o que já foi triado, ordenado por prazo e prioridade). Tudo pelo teclado:
 
 | Tecla | Ação |
 | --- | --- |
@@ -41,15 +41,23 @@ A janela principal tem duas listas: **Caixa de entrada** (o que foi capturado) e
 | `X` / `E` | concluir / arquivar |
 | `Z` | desfazer |
 | `O` | abrir o link |
-| `Tab` | trocar de lista |
+| `F` | pôr o item em foco |
+| `Tab` | trocar de tela |
 | `C` | capturar |
+
+## Foco e timer
+
+- `F` em qualquer item põe ele em foco e abre a tela **Agora**, com o timer correndo. Só um item fica em foco por vez.
+- Na tela Agora: `P` pausa (pergunta onde você parou), `X` conclui e `1` `2` `3` focam uma das próximas de A fazer.
+- Trocar de foco pausa o item anterior com a nota de onde parou. Itens pausados voltam para A fazer mostrando essa nota.
+- O tempo fica gravado nos eventos `foco_inicio` e `foco_fim`. Se o app for fechado ou o computador dormir no meio do foco, a sessão é encerrada no último minuto em que o app estava rodando.
+- A bandeja mostra o item em foco e há quanto tempo, com a opção Pausar.
 
 ## Bandeja, configurações e backup
 
-- Fechar a janela deixa o Juggl na bandeja do sistema, com o atalho ativo. O ícone tem Capturar, Abrir o Juggl e Sair.
+- Fechar a janela deixa o Juggl na bandeja do sistema, com o atalho ativo. O ícone tem o foco atual, Pausar, Capturar, Abrir o Juggl e Sair.
 - Abrir o Juggl de novo só traz a janela existente. `juggl --captura` abre direto a captura (útil no Linux com Wayland: ligue esse comando a um atalho do sistema).
-- O visual segue o tema do sistema: claro ou escuro.
-- `,` abre as configurações: trocar o atalho da captura e fazer backup na hora.
+- `,` abre as configurações: tema (igual ao sistema, claro ou escuro), atalho da captura e backup na hora.
 - Todo dia uma cópia do banco vai para a subpasta `backups/`, guardando as 7 mais recentes.
 
 ## Testes

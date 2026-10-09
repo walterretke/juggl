@@ -20,6 +20,10 @@ export interface Item {
   projeto_id: string | null;
   pessoa: string | null;
   projeto: string | null;
+  /** Onde parou, anotado na última pausa (só para itens pausados). */
+  nota_pausa: string | null;
+  /** Tempo total em foco, somando as sessões já encerradas. */
+  tempo_ms: number;
 }
 
 /** Campos que a triagem pode mudar. */
@@ -94,34 +98,45 @@ const ORDEM: Record<Lista, string> = {
             item.criado_em`,
 };
 
+/** Status que aparecem em cada lista. Pausados voltam para A fazer, com a nota de onde parou. */
+const STATUS_DA_LISTA: Record<Lista, string> = {
+  inbox: "'inbox'",
+  a_fazer: "'a_fazer', 'pausado'",
+};
+
+/** SELECT de itens com pessoa, projeto, nota da última pausa e tempo em foco. */
+export const SELECT_ITEM = `
+  SELECT item.id, item.titulo, item.status, item.prioridade, item.prazo, item.link, item.origem,
+         item.id_externo, item.criado_em, item.atualizado_em, item.pessoa_id, item.projeto_id,
+         pessoa.apelido AS pessoa, projeto.nome AS projeto,
+         CASE WHEN item.status = 'pausado' THEN
+           (SELECT json_extract(e.dados, '$.nota') FROM evento e
+             WHERE e.item_id = item.id AND e.tipo = 'foco_fim' ORDER BY e.timestamp DESC LIMIT 1)
+         END AS nota_pausa,
+         COALESCE((SELECT SUM(json_extract(e.dados, '$.duracao_ms')) FROM evento e
+                    WHERE e.item_id = item.id AND e.tipo = 'foco_fim'), 0) AS tempo_ms
+    FROM item
+    LEFT JOIN pessoa ON pessoa.id = item.pessoa_id
+    LEFT JOIN projeto ON projeto.id = item.projeto_id`;
+
 export async function listarItens(lista: Lista): Promise<Item[]> {
   const db = await getDb();
-  return db.select<Item[]>(
-    `SELECT item.id, item.titulo, item.status, item.prioridade, item.prazo, item.link, item.origem,
-            item.id_externo, item.criado_em, item.atualizado_em, item.pessoa_id, item.projeto_id,
-            pessoa.apelido AS pessoa, projeto.nome AS projeto
-       FROM item
-       LEFT JOIN pessoa ON pessoa.id = item.pessoa_id
-       LEFT JOIN projeto ON projeto.id = item.projeto_id
-      WHERE item.status = $1
-      ORDER BY ${ORDEM[lista]}`,
-    [lista],
-  );
+  return db.select<Item[]>(`${SELECT_ITEM} WHERE item.status IN (${STATUS_DA_LISTA[lista]}) ORDER BY ${ORDEM[lista]}`);
 }
 
 export async function contarPorLista(): Promise<Record<Lista, number>> {
   const db = await getDb();
-  const linhas = await db.select<{ status: Lista; total: number }[]>(
-    "SELECT status, COUNT(*) AS total FROM item WHERE status IN ('inbox', 'a_fazer') GROUP BY status",
+  const [linha] = await db.select<Record<Lista, number>[]>(
+    `SELECT COALESCE(SUM(status IN (${STATUS_DA_LISTA.inbox})), 0) AS inbox,
+            COALESCE(SUM(status IN (${STATUS_DA_LISTA.a_fazer})), 0) AS a_fazer
+       FROM item`,
   );
-  const contagem: Record<Lista, number> = { inbox: 0, a_fazer: 0 };
-  for (const l of linhas) contagem[l.status] = l.total;
-  return contagem;
+  return linha ?? { inbox: 0, a_fazer: 0 };
 }
 
 const CAMPOS_EDITAVEIS = ["titulo", "status", "prioridade", "prazo", "pessoa_id", "projeto_id"] as const;
 
-async function gravarCampos(id: string, campos: Mudancas): Promise<void> {
+export async function gravarCampos(id: string, campos: Mudancas): Promise<void> {
   const nomes = CAMPOS_EDITAVEIS.filter((c) => c in campos);
   if (nomes.length === 0) return;
   const db = await getDb();
@@ -133,14 +148,14 @@ async function gravarCampos(id: string, campos: Mudancas): Promise<void> {
   ]);
 }
 
-async function registrarEvento(itemId: string, tipo: string, dados: unknown): Promise<string> {
+export async function registrarEvento(itemId: string, tipo: string, dados: unknown, quando = agoraIso()): Promise<string> {
   const db = await getDb();
   const id = novoId();
   await db.execute("INSERT INTO evento (id, item_id, tipo, timestamp, dados) VALUES ($1, $2, $3, $4, $5)", [
     id,
     itemId,
     tipo,
-    agoraIso(),
+    quando,
     JSON.stringify(dados),
   ]);
   return id;

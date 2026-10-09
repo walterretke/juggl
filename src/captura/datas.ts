@@ -45,3 +45,22 @@ export function tempoParado(desdeIso: string, agora: Date): string {
 }
 
 export { inicioDoDia, DIA_MS };
+
+/** Cronômetro "1:05:09" (ou "5:09" abaixo de uma hora). */
+export function formatarCronometro(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = String(total % 60).padStart(2, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
+}
+
+/** Duração resumida: "menos de 1 min", "25 min", "2 h", "2 h 10 min". */
+export function formatarDuracao(ms: number): string {
+  const minutos = Math.floor(Math.max(0, ms) / 60000);
+  if (minutos < 1) return "menos de 1 min";
+  const h = Math.floor(minutos / 60);
+  const m = minutos % 60;
+  if (h === 0) return `${m} min`;
+  return m === 0 ? `${h} h` : `${h} h ${m} min`;
+}

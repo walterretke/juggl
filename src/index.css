@@ -2,8 +2,7 @@
 @import "@fontsource-variable/source-sans-3";
 @import "tailwindcss";
 
-/* Visual "Papel": tons quentes de papel no claro e de carvão no escuro.
-   O escuro segue o tema do sistema. */
+/* Visual "Papel": tons quentes de papel no claro e de carvão no escuro. */
 @theme {
   --font-sans: "Source Sans 3 Variable", system-ui, sans-serif;
   --font-titulo: "Fraunces Variable", Georgia, serif;
@@ -25,8 +24,10 @@
   --color-atraso-claro: #fbeee9;
 }
 
+/* Tema escuro: pelo sistema, a menos que o usuário tenha escolhido claro,
+   ou forçado com data-tema="escuro" (ver src/tema.ts). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-tema="claro"]) {
     --color-fundo: #121110;
     --color-folha: #1c1b18;
     --color-lateral: #171614;
@@ -43,6 +44,24 @@
     --color-atraso: #f08a6c;
     --color-atraso-claro: #3a2621;
   }
+}
+
+:root[data-tema="escuro"] {
+  --color-fundo: #121110;
+  --color-folha: #1c1b18;
+  --color-lateral: #171614;
+  --color-cartao: #252420;
+  --color-tinta: #ece8df;
+  --color-tinta-2: #d4cfc4;
+  --color-suave: #a29c90;
+  --color-apagado: #7d786e;
+  --color-linha: #2e2c27;
+  --color-etiqueta: #2a2824;
+  --color-destaque: #7d9cf0;
+  --color-destaque-claro: #232a3d;
+  --color-destaque-tinta: #a9bdf5;
+  --color-atraso: #f08a6c;
+  --color-atraso-claro: #3a2621;
 }
 
 html,
