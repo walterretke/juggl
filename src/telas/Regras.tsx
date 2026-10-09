@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { tempoParado } from "../captura/datas";
 import { gravarConfig } from "../db/config";
+import { CHAVE_DETECTOR, detectorLigado } from "../db/detector";
 import { listarPrioridades, type Prioridade } from "../db/prioridades";
 import {
   CHAVE_NAO_PERTURBE,
@@ -85,6 +86,7 @@ function Urgente({ ligado, aoMudar }: { ligado: boolean; aoMudar: (v: boolean) =
 export default function Regras({ aoAvisar }: Props) {
   const [regras, setRegras] = useState<Regra[] | null>(null);
   const [naoPerturbe, setNaoPerturbe] = useState(true);
+  const [detector, setDetector] = useState(true);
   const [avisos, setAvisos] = useState<Notificacao[]>([]);
   const [opcoes, setOpcoes] = useState<{ pessoas: { id: string; nome: string }[]; projetos: { id: string; nome: string }[] }>({
     pessoas: [],
@@ -98,15 +100,17 @@ export default function Regras({ aoAvisar }: Props) {
 
   const carregar = useCallback(async () => {
     try {
-      const [lidas, np, ultimos, ops, prios] = await Promise.all([
+      const [lidas, np, det, ultimos, ops, prios] = await Promise.all([
         listarRegras(),
         naoPerturbeLigado(),
+        detectorLigado(),
         ultimasNotificacoes(),
         opcoesDeRegra(),
         listarPrioridades(),
       ]);
       setRegras(lidas);
       setNaoPerturbe(np);
+      setDetector(det);
       setAvisos(ultimos);
       setOpcoes(ops);
       setPrioridades(prios);
@@ -143,6 +147,11 @@ export default function Regras({ aoAvisar }: Props) {
     await gravarConfig(CHAVE_NAO_PERTURBE, ligado ? "sim" : "nao");
   }
 
+  const trocarDetector = useCallback(async (ligado: boolean) => {
+    setDetector(ligado);
+    await gravarConfig(CHAVE_DETECTOR, ligado ? "sim" : "nao");
+  }, []);
+
   const testar = useCallback(async () => {
     const ok = await notificar("Teste do Juggl", "Se você está vendo isto, as notificações funcionam.");
     aoAvisar(ok ? "Notificação de teste enviada." : "O sistema não deixou mostrar notificações. Veja as permissões do Juggl.");
@@ -178,7 +187,8 @@ export default function Regras({ aoAvisar }: Props) {
     await carregar();
   }
 
-  // Teclado: ↑ ↓ escolhem, Espaço liga/desliga, U urgente, N nova, Enter edita, Delete remove, T testa.
+  // Teclado: ↑ ↓ escolhem, Espaço liga/desliga, U urgente, N nova, Enter edita, Delete remove, T testa,
+  // P liga/desliga o alerta de prioridade errada.
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
       if (!regras || editando || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -197,12 +207,13 @@ export default function Regras({ aoAvisar }: Props) {
       else if (e.key === "Enter" && regra?.tipo === "personalizada") setEditando(regra);
       else if (e.key === "Delete" && regra?.tipo === "personalizada") setRemovendo(regra.id);
       else if (tecla === "t") testar();
+      else if (tecla === "p") trocarDetector(!detector);
       else return;
       e.preventDefault();
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [regras, selecionada, editando, removendo, alterar, testar]);
+  }, [regras, selecionada, editando, removendo, alterar, testar, detector, trocarDetector]);
 
   if (!regras) return erro ? <p className="rounded-xl bg-atraso-claro px-4 py-3 text-sm text-atraso">{erro}</p> : null;
 
@@ -230,6 +241,19 @@ export default function Regras({ aoAvisar }: Props) {
         >
           Testar notificação
         </button>
+      </div>
+      <div className="mt-2 flex items-center gap-3 rounded-xl bg-cartao px-4 py-3 shadow-[0_0_0_1px_var(--color-linha)]">
+        <Interruptor ligado={detector} rotulo="Alerta de prioridade errada" aoMudar={trocarDetector} />
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] font-medium">
+            Alerta de prioridade errada <kbd className="ml-1 font-sans text-xs font-normal text-apagado">P</kbd>
+          </p>
+          <p className="text-[13px] text-suave">
+            Avisa quando outro item fica bem mais urgente que o foco. Pontos: prazo (atrasado 50, hoje 40, amanhã 25, esta semana
+            10), 15 por cobrança até 45, 2 por dia parado até 20, prioridade (a última 0, a penúltima 10, as de cima 20) e 15 se é uma das 3 do dia. Avisa com
+            30 pontos de diferença, ou quando uma cobrança ou prazo novo faz outro passar à frente.
+          </p>
+        </div>
       </div>
 
       {erro && <p className="mt-4 rounded-xl bg-atraso-claro px-4 py-3 text-sm text-atraso">{erro}</p>}

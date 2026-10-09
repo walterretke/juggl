@@ -33,6 +33,10 @@ import {
 import { listarPrioridades, type Prioridade } from "../db/prioridades";
 import { deveAbrirRitual, deveLembrarRitual, ritualFeitoHoje } from "../db/ritual";
 import { liberarAvisosDoFoco, verificarRegras } from "../regras/verificar";
+import { notificar } from "../regras/notificar";
+import type { Urgencia } from "../regras/urgencia";
+import { adiarAlertas, continuarApesarDoAlerta, pontuacoesAgora, verificarPrioridade, type AlertaComFoco } from "../db/detector";
+import AlertaPrioridade from "./AlertaPrioridade";
 import Agora from "./Agora";
 import Configuracoes from "./Configuracoes";
 import Horas from "./Horas";
@@ -135,6 +139,9 @@ export default function Principal() {
   const [versao, setVersao] = useState(0);
   const [ritualFeito, setRitualFeito] = useState(true);
   const [lembreteRitual, setLembreteRitual] = useState(false);
+  const [alerta, setAlerta] = useState<AlertaComFoco | null>(null);
+  /** Pontuação de cada item quando o foco atual começou, para ver quem passou à frente. */
+  const pontosDoInicio = useRef<Map<string, Urgencia> | null>(null);
   const desfazer = useRef<Alteracao[]>([]);
   /** Item arrastado de uma tela que não é lista (Ritual, Pessoas), para soltar na barra lateral. */
   const arrastado = useRef<Item | null>(null);
@@ -210,12 +217,18 @@ export default function Principal() {
   carregarAtual.current = carregar;
   useEffect(() => {
     if (!pronto) return;
-    const rodar = () =>
+    const rodar = () => {
       verificarRegras()
         .then((marcados) => {
           if (marcados > 0) return carregarAtual.current();
         })
         .catch((e) => console.error("Regras:", e));
+      if (focoAtual.current) {
+        verificarPrioridade(pontosDoInicio.current)
+          .then((a) => a && mostrarAlerta(a))
+          .catch((e) => console.error("Detector:", e));
+      }
+    };
     rodar();
     const relogio = setInterval(rodar, MINUTO_MS);
     return () => clearInterval(relogio);
@@ -225,8 +238,20 @@ export default function Principal() {
   const focoAnterior = useRef<string | null>(null);
   useEffect(() => {
     const id = foco ? `${foco.item.id}-${foco.inicio}` : null;
-    if (focoAnterior.current && focoAnterior.current !== id) liberarAvisosDoFoco().catch(() => {});
+    if (focoAnterior.current === id) return;
+    if (focoAnterior.current) liberarAvisosDoFoco().catch(() => {});
     focoAnterior.current = id;
+    // Começou um foco: guarda as pontuações e avisa se outro item está bem à frente.
+    setAlerta((a) => (a && a.focoId === foco?.item.id ? a : null));
+    pontosDoInicio.current = null;
+    if (!foco) return;
+    pontuacoesAgora()
+      .then((pontos) => {
+        pontosDoInicio.current = pontos;
+        return verificarPrioridade(null);
+      })
+      .then((a) => a && mostrarAlerta(a))
+      .catch((e) => console.error("Detector:", e));
   }, [foco?.item.id, foco?.inicio]);
 
   useEffect(() => agendarBackupDiario((e) => setErro(`Backup diário falhou: ${e}`)), []);
@@ -336,6 +361,42 @@ export default function Principal() {
     mostrarAviso("Desfeito.");
     await carregar();
   }
+
+  /** Mostra o alerta de prioridade errada; com a janela escondida, também como notificação. */
+  function mostrarAlerta(a: AlertaComFoco) {
+    setAlerta(a);
+    if (!document.hasFocus()) notificar(`Talvez você devesse focar em ${a.outro.titulo}`, `${a.explicacao}.`).catch(() => {});
+  }
+
+  function responderAlerta(resposta: "trocar" | "continuar" | "adiar") {
+    if (!alerta) return;
+    setAlerta(null);
+    if (resposta === "trocar") {
+      focar(alerta.outro);
+    } else if (resposta === "continuar") {
+      continuarApesarDoAlerta(alerta).catch((e) => setErro(String(e)));
+      mostrarAviso("Continuando. Só aviso de novo se esse item ficar mais urgente.");
+    } else {
+      adiarAlertas().catch((e) => setErro(String(e)));
+      mostrarAviso("Sem alertas de prioridade pelos próximos 30 minutos.");
+    }
+  }
+
+  // Alerta na tela: T troca, C continua, A adia. Vem antes dos outros atalhos.
+  useEffect(() => {
+    if (!alerta) return;
+    function aoTeclar(e: KeyboardEvent) {
+      if (pedidoNota || configAberta || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select")) return;
+      const resposta = ({ t: "trocar", c: "continuar", a: "adiar" } as const)[e.key.toLowerCase() as "t" | "c" | "a"];
+      if (!resposta) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      responderAlerta(resposta);
+    }
+    window.addEventListener("keydown", aoTeclar, true);
+    return () => window.removeEventListener("keydown", aoTeclar, true);
+  });
 
   /** Põe o item em foco. Se outro estava em foco, pergunta antes onde parou nele. */
   function focar(item: Item) {
@@ -685,6 +746,15 @@ export default function Principal() {
             </div>
           )}
 
+          {alerta && foco?.item.id === alerta.focoId && (
+            <AlertaPrioridade
+              alerta={alerta}
+              aoTrocar={() => responderAlerta("trocar")}
+              aoContinuar={() => responderAlerta("continuar")}
+              aoAdiar={() => responderAlerta("adiar")}
+            />
+          )}
+
           {itens?.length === 0 && lista === "inbox" && (
             <p className="mt-16 text-center text-[15px] text-apagado">
               Aperte {rotuloAtalho(atalho)} em qualquer janela para capturar um pedido.
@@ -840,6 +910,7 @@ export default function Principal() {
                 <Dica teclas="Enter">editar</Dica>
                 <Dica teclas="Delete">remover</Dica>
                 <Dica teclas="T">testar</Dica>
+                <Dica teclas="P">alerta de prioridade</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
               </>
             ) : lista === "ritual" ? (

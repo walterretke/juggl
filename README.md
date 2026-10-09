@@ -87,6 +87,13 @@ Pelo teclado:
 - Teclado: setas escolhem, `Espaço` liga e desliga, `U` alterna urgente, `Enter` edita, `Delete` remove, `T` manda uma notificação de teste. Tudo também tem clique.
 - **Últimos avisos** lista o que saiu e o que está esperando o foco acabar.
 
+## Alerta de prioridade errada
+
+- Cada item aberto tem uma pontuação de urgência, sem caixa-preta: prazo ou promessa (atrasado 50, hoje 40, amanhã 25, esta semana 10), 15 por cobrança (até 45), 2 por dia parado (até 20), prioridade contada de baixo (a última 0, a penúltima 10, as de cima 20) e 15 se é uma das 3 do dia.
+- Ao começar um foco, se outro item está 30 pontos ou mais à frente, aparece no topo: "Talvez você devesse focar em Relatório de acessos: vence hoje e Carlos já cobrou 2 vezes". Durante o foco, avisa também quando uma cobrança nova ou um prazo chegando faz outro item passar à frente. Com a janela escondida, vem como notificação.
+- Três respostas, com clique ou tecla: **Trocar agora** (`T`), **Continuar** (`C`, fica registrado; só avisa de novo se algum item ficar mais urgente) e **Adiar 30 min** (`A`). "Por quê?" mostra a conta dos dois itens.
+- Nunca mais de uma vez por hora para o mesmo par. Liga e desliga na tela Regras (`P`).
+
 ## Horas da semana
 
 - A tela **Horas da semana** soma o tempo em foco por projeto e por dia (segunda a domingo), com `‹` `›` (ou as setas `←` `→`) para trocar de semana. Clicar num projeto mostra os itens.
