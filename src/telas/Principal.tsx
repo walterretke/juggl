@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { descreverPrazo, formatarDuracao, tempoParado } from "../captura/datas";
+import { formatarDuracao } from "../captura/datas";
 import { interpretarPrazo } from "../captura/parser";
 import { agendarBackupDiario } from "../db/backup";
 import { ATALHO_PADRAO, lerConfig } from "../db/config";
@@ -30,10 +30,10 @@ import {
 } from "../db/itens";
 import { listarPrioridades, type Prioridade } from "../db/prioridades";
 import Agora from "./Agora";
-import { ETIQUETA_PRIORIDADE } from "./cores";
 import Configuracoes from "./Configuracoes";
+import ItemLista, { type CampoEditavel, type Menu } from "./ItemLista";
 import PedidoNota from "./PedidoNota";
-import { COR_ORIGEM, NOME_ORIGEM, rotuloAtalho } from "./origens";
+import { rotuloAtalho } from "./origens";
 
 const MINUTO_MS = 60 * 1000;
 const MAX_DESFAZER = 30;
@@ -50,7 +50,6 @@ interface Pedido {
   acao: (nota: string | null) => Promise<void>;
 }
 
-type CampoEditavel = "prazo" | "projeto" | "pessoa" | "titulo";
 
 const ROTULO_CAMPO: Record<CampoEditavel, string> = {
   prazo: "Prazo (hoje, amanha, sexta, 15/10; vazio tira)",
@@ -87,13 +86,6 @@ async function mudancasDaEdicao(campo: CampoEditavel, texto: string): Promise<Mu
   return { pessoa_id: nome ? await buscarOuCriarPessoa(nome) : null };
 }
 
-function classePrazo(prazo: string, agora: Date): string {
-  const texto = descreverPrazo(prazo, agora);
-  if (texto.startsWith("atrasado")) return "font-semibold text-atraso";
-  if (texto === "hoje") return "font-semibold text-destaque";
-  return "text-suave";
-}
-
 export default function Principal() {
   const [lista, setLista] = useState<Tela>("inbox");
   const [foco, setFoco] = useState<Foco | null>(null);
@@ -108,7 +100,9 @@ export default function Principal() {
   const [edicao, setEdicao] = useState<Edicao | null>(null);
   const [configAberta, setConfigAberta] = useState(false);
   const [sugestoes, setSugestoes] = useState<{ pessoas: string[]; projetos: string[] }>({ pessoas: [], projetos: [] });
-  const [aviso, setAviso] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<{ texto: string; desfazivel: boolean } | null>(null);
+  const [menu, setMenu] = useState<Menu | null>(null);
+  const [alvoArrasto, setAlvoArrasto] = useState<Tela | null>(null);
   const [atalho, setAtalho] = useState(ATALHO_PADRAO);
   const [avisoAtalho, setAvisoAtalho] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -216,8 +210,8 @@ export default function Principal() {
     // Só reinicia quando a sessão muda; recarregar a lista não pode zerar o último pulso.
   }, [foco?.item.id, foco?.inicio, foco?.item.titulo]);
 
-  function mostrarAviso(texto: string) {
-    setAviso(texto);
+  function mostrarAviso(texto: string, desfazivel = false) {
+    setAviso({ texto, desfazivel });
     window.clearTimeout(timerAviso.current);
     timerAviso.current = window.setTimeout(() => setAviso(null), 4000);
   }
@@ -227,7 +221,7 @@ export default function Principal() {
       try {
         const alteracao = await alterarItem(item, mudancas);
         desfazer.current = [...desfazer.current, alteracao].slice(-MAX_DESFAZER);
-        if (mensagem) mostrarAviso(`${mensagem}. Z desfaz.`);
+        if (mensagem) mostrarAviso(mensagem, true);
         await carregar();
       } catch (e) {
         setErro(String(e));
@@ -315,7 +309,7 @@ export default function Principal() {
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
       // # e @ podem vir com AltGr (Ctrl+Alt no Windows) em alguns teclados.
-      if (edicao || configAberta || pedidoNota || ((e.ctrlKey || e.metaKey || e.altKey) && e.key !== "#" && e.key !== "@")) return;
+      if (edicao || configAberta || pedidoNota || menu || ((e.ctrlKey || e.metaKey || e.altKey) && e.key !== "#" && e.key !== "@")) return;
       const item = itens?.[selecionado];
       const tecla = e.key;
 
@@ -366,7 +360,7 @@ export default function Principal() {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [edicao, configAberta, pedidoNota, itens, selecionado, lista, aplicar, foco, proximas, prioridades]);
+  }, [edicao, configAberta, pedidoNota, menu, itens, selecionado, lista, aplicar, foco, proximas, prioridades]);
 
   // Mantém o item selecionado visível ao navegar pelo teclado.
   useEffect(() => {
@@ -397,6 +391,62 @@ export default function Principal() {
     setSelecionado(0);
   }
 
+  /** Ações de clique de cada linha; as mesmas das teclas. */
+  function acoesDoItem(item: Item, indice: number) {
+    const selecionar = () => {
+      setSelecionado(indice);
+      setEdicao(null);
+    };
+    return {
+      selecionar,
+      concluir: () => aplicar(item, { status: "feito" }, "Concluído"),
+      focar: () => focar(item),
+      mover: (destino: Lista) =>
+        aplicar(item, { status: destino }, destino === "inbox" ? "Voltou para a caixa de entrada" : "Movido para A fazer"),
+      arquivar: () => aplicar(item, { status: "arquivado" }, "Arquivado"),
+      abrirLink: () => item.link && openUrl(item.link),
+      editar: (campo: CampoEditavel) => {
+        selecionar();
+        setMenu(null);
+        iniciarEdicao(campo, item);
+      },
+      definirPrazo: (prazo: string | null) => {
+        setMenu(null);
+        aplicar(item, { prazo });
+      },
+      definirPrioridade: (id: string | null) => {
+        setMenu(null);
+        aplicar(item, { prioridade_id: id });
+      },
+      abrirMenu: (novo: Menu | null) => {
+        selecionar();
+        setMenu(novo);
+      },
+    };
+  }
+
+  /** Soltar um item numa tela da barra lateral: Agora põe em foco, as listas movem. */
+  function alvoDeArrasto(destino: Tela) {
+    return {
+      onDragOver: (e: React.DragEvent) => {
+        if (!e.dataTransfer.types.includes("text/juggl-item")) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setAlvoArrasto(destino);
+      },
+      onDragLeave: () => setAlvoArrasto((a) => (a === destino ? null : a)),
+      onDrop: (e: React.DragEvent) => {
+        e.preventDefault();
+        setAlvoArrasto(null);
+        const item = itens?.find((i) => i.id === e.dataTransfer.getData("text/juggl-item"));
+        if (!item) return;
+        if (destino === "agora") focar(item);
+        else if (destino !== lista)
+          aplicar(item, { status: destino }, destino === "inbox" ? "Voltou para a caixa de entrada" : "Movido para A fazer");
+      },
+    };
+  }
+
   const botaoCapturar = (
     <button
       type="button"
@@ -413,7 +463,7 @@ export default function Principal() {
   );
 
   return (
-    <div className="flex h-screen bg-folha text-tinta">
+    <div className="flex h-screen bg-folha text-tinta select-none">
       <nav aria-label="Listas" className="hidden w-56 shrink-0 flex-col gap-1 bg-lateral px-4 py-7 md:flex">
         <div className="px-3 pb-6 font-titulo text-[22px] font-semibold tracking-tight">Juggl</div>
         {TELAS.map((l) => (
@@ -421,8 +471,13 @@ export default function Principal() {
             key={l}
             type="button"
             onClick={() => trocarLista(l)}
+            {...alvoDeArrasto(l)}
             className={`flex items-center justify-between rounded-lg px-3 py-2 text-[15px] ${
-              lista === l ? "bg-folha font-semibold text-tinta shadow-sm" : "text-tinta-2 hover:text-tinta"
+              alvoArrasto === l
+                ? "bg-destaque-claro text-destaque-tinta ring-2 ring-destaque"
+                : lista === l
+                  ? "bg-folha font-semibold text-tinta shadow-sm"
+                  : "text-tinta-2 hover:text-tinta"
             }`}
           >
             {NOME_TELA[l]}
@@ -462,7 +517,10 @@ export default function Principal() {
               key={l}
               type="button"
               onClick={() => trocarLista(l)}
-              className={`rounded-full px-3 py-1 text-sm ${lista === l ? "bg-etiqueta font-semibold" : "text-suave"}`}
+              {...alvoDeArrasto(l)}
+              className={`rounded-full px-3 py-1 text-sm ${
+                alvoArrasto === l ? "bg-destaque-claro text-destaque-tinta" : lista === l ? "bg-etiqueta font-semibold" : "text-suave"
+              }`}
             >
               {NOME_TELA[l]}{" "}
               {l !== "agora" && <span className="tabular-nums text-apagado">{contagem[l] || ""}</span>}
@@ -499,101 +557,71 @@ export default function Principal() {
           )}
 
           <ul className="flex flex-col gap-1.5 pb-6">
-            {itens?.map((item, i) => {
-              const ativo = i === selecionado;
-              const meta = [
-                item.nota_pausa && `Parou em: ${item.nota_pausa}`,
-                item.pessoa,
-                item.projeto,
-                origemComId(item),
-                item.tempo_ms > 0 && `${formatarDuracao(item.tempo_ms)} em foco`,
-              ]
-                .filter(Boolean)
-                .join(" · ");
-              return (
-                <li
-                  key={item.id}
-                  id={`item-${i}`}
-                  onClick={() => setSelecionado(i)}
-                  onDoubleClick={() => item.link && openUrl(item.link)}
-                  className={`rounded-xl px-[18px] py-3.5 ${
-                    ativo ? "bg-cartao shadow-[0_0_0_1.5px_var(--color-destaque),0_4px_14px_rgba(0,0,0,0.08)]" : ""
-                  }`}
-                >
-                  <div className="flex items-center gap-4">
-                    <span
-                      title={NOME_ORIGEM[item.origem] ?? item.origem}
-                      className={`size-2.5 shrink-0 rounded-full ${COR_ORIGEM[item.origem] ?? COR_ORIGEM.manual}`}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-base font-medium">{item.titulo}</span>
-                        {item.status === "pausado" && (
-                          <span className="shrink-0 rounded-full bg-etiqueta px-2 text-xs font-semibold text-tinta-2">Pausado</span>
-                        )}
-                        {item.prioridade && (
-                          <span
-                            className={`shrink-0 rounded-full px-2 text-xs font-semibold ${ETIQUETA_PRIORIDADE[item.prioridade_cor ?? "cinza"]}`}
-                          >
-                            {item.prioridade}
-                          </span>
-                        )}
-                      </div>
-                      {meta && <div className="mt-0.5 truncate text-[13px] text-suave">{meta}</div>}
-                    </div>
-                    <div className="shrink-0 text-right">
-                      {item.prazo && (
-                        <div className={`text-sm ${classePrazo(item.prazo, agora)}`}>{rotuloPrazo(item.prazo, agora)}</div>
-                      )}
-                      <div className="text-xs tabular-nums text-apagado" title="Parado há">
-                        {tempoParado(lista === "inbox" ? item.criado_em : item.atualizado_em, agora)}
-                      </div>
-                    </div>
-                  </div>
-
-                  {ativo && edicao && (
-                    <form
-                      className="mt-3 pl-6"
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        confirmarEdicao(item);
+            {itens?.map((item, i) => (
+              <ItemLista
+                key={item.id}
+                item={item}
+                indice={i}
+                ativo={i === selecionado}
+                lista={lista === "agora" ? "inbox" : lista}
+                agora={agora}
+                prioridades={prioridades}
+                menu={i === selecionado ? menu : null}
+                acoes={acoesDoItem(item, i)}
+              >
+                {i === selecionado && edicao && (
+                  <form
+                    className="mt-3 pl-9"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      confirmarEdicao(item);
+                    }}
+                  >
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-apagado">
+                      {ROTULO_CAMPO[edicao.campo]}
+                    </label>
+                    <input
+                      autoFocus
+                      onFocus={(e) => e.target.select()}
+                      list="sugestoes-edicao"
+                      value={edicao.valor}
+                      onChange={(e) => setEdicao({ ...edicao, valor: e.target.value, erro: null })}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          setEdicao(null);
+                        }
                       }}
-                    >
-                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-apagado">
-                        {ROTULO_CAMPO[edicao.campo]}
-                      </label>
-                      <input
-                        autoFocus
-                        onFocus={(e) => e.target.select()}
-                        list="sugestoes-edicao"
-                        value={edicao.valor}
-                        onChange={(e) => setEdicao({ ...edicao, valor: e.target.value, erro: null })}
-                        onKeyDown={(e) => {
-                          if (e.key === "Escape") {
-                            e.preventDefault();
-                            setEdicao(null);
-                          }
-                        }}
-                        onBlur={() => setEdicao(null)}
-                        className="w-full rounded-lg border border-linha bg-folha px-3 py-1.5 text-[15px] outline-none focus:border-destaque"
-                      />
-                      <datalist id="sugestoes-edicao">
-                        {sugestoesEdicao.map((s) => (
-                          <option key={s} value={s} />
-                        ))}
-                      </datalist>
-                      {edicao.erro && <p className="mt-1 text-sm text-atraso">{edicao.erro}</p>}
-                    </form>
-                  )}
-                </li>
-              );
-            })}
+                      onBlur={() => setEdicao(null)}
+                      className="w-full rounded-lg border border-linha bg-folha px-3 py-1.5 text-[15px] outline-none focus:border-destaque"
+                    />
+                    <datalist id="sugestoes-edicao">
+                      {sugestoesEdicao.map((s) => (
+                        <option key={s} value={s} />
+                      ))}
+                    </datalist>
+                    {edicao.erro && <p className="mt-1 text-sm text-atraso">{edicao.erro}</p>}
+                  </form>
+                )}
+              </ItemLista>
+            ))}
           </ul>
         </main>
 
         <footer className="flex flex-wrap items-center gap-x-5 gap-y-1 px-6 py-4 text-[13px] text-apagado md:px-14">
           {aviso ? (
-            <span className="font-semibold text-tinta">{aviso}</span>
+            <span className="flex items-center gap-3 font-semibold text-tinta">
+              {aviso.texto}
+              {aviso.desfazivel && (
+                <button
+                  type="button"
+                  onClick={desfazerUltima}
+                  className="rounded-md bg-etiqueta px-2.5 py-0.5 font-semibold text-destaque-tinta hover:bg-destaque-claro"
+                >
+                  Desfazer <kbd className="font-sans font-normal text-apagado">Z</kbd>
+                </button>
+              )}
+            </span>
           ) : (
             lista === "agora" ? (
               <>
@@ -637,18 +665,6 @@ export default function Principal() {
       )}
     </div>
   );
-}
-
-function origemComId(item: Item): string | null {
-  if (item.origem === "manual") return null;
-  const nome = NOME_ORIGEM[item.origem] ?? item.origem;
-  return item.id_externo ? `${nome} ${item.id_externo}` : nome;
-}
-
-/** "hoje" → "Hoje", para combinar com o resto da lista. */
-function rotuloPrazo(prazo: string, agora: Date): string {
-  const texto = descreverPrazo(prazo, agora);
-  return texto.charAt(0).toUpperCase() + texto.slice(1);
 }
 
 function Dica({ teclas, children }: { teclas: string; children: React.ReactNode }) {

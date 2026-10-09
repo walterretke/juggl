@@ -34,7 +34,11 @@ Um link do Teams, Jira, ServiceNow ou Azure DevOps na área de transferência é
 
 ## Triagem
 
-A janela principal tem a tela **Agora** (o item em foco) e duas listas: **Caixa de entrada** (o que foi capturado) e **A fazer** (o que já foi triado, ordenado por prazo e prioridade). Tudo pelo teclado:
+A janela principal tem a tela **Agora** (o item em foco) e duas listas: **Caixa de entrada** (o que foi capturado) e **A fazer** (o que já foi triado, ordenado por prazo e prioridade).
+
+Com o mouse: o círculo conclui; passar o mouse mostra os botões de mover, focar, prioridade, prazo, link e arquivar; clicar no prazo ou na prioridade abre a escolha (com calendário); clicar em quem pediu ou no projeto edita; dois cliques no título renomeiam. Arraste um item para **Agora** (põe em foco), **A fazer** ou **Caixa de entrada** na barra lateral. O aviso de cada ação tem o botão Desfazer.
+
+Pelo teclado:
 
 | Tecla | Ação |
 | --- | --- |
