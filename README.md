@@ -13,6 +13,25 @@ npm install
 npm run tauri dev
 ```
 
+## Captura rápida
+
+`Ctrl+Shift+Espaço` abre a captura sobre qualquer janela. Enter salva na caixa de entrada, Esc cancela.
+
+| Marcação | Exemplo | Vira |
+| --- | --- | --- |
+| `@nome` | `@carlos` | quem pediu |
+| `#projeto` | `#migracao` | projeto |
+| `!prioridade` | `!alta`, `!media`, `!baixa` | prioridade |
+| `>prazo` | `>hoje`, `>amanha`, `>sexta`, `>15/10` | prazo |
+
+Um link do Teams, Jira, ServiceNow ou Azure DevOps na área de transferência é anexado com a origem reconhecida (o × remove). Tab completa `@` e `#` já usados.
+
+## Testes
+
+```sh
+npm test
+```
+
 ## Gerar o executável
 
 ```sh
