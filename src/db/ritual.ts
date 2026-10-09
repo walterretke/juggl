@@ -59,9 +59,20 @@ export async function deveAbrirRitual(hoje = new Date()): Promise<boolean> {
   return true;
 }
 
-/** Passou das 10h e o ritual não foi feito: lembra uma vez só no dia. */
+/**
+ * Passou da hora da regra "Ritual pendente" (10h por padrão) e o ritual não foi feito:
+ * mostra o aviso no topo uma vez só no dia. Desligar a regra desliga o aviso.
+ */
 export async function deveLembrarRitual(agora = new Date()): Promise<boolean> {
-  if (agora.getHours() < HORA_LEMBRETE_RITUAL) return false;
+  const db = await getDb();
+  const [regra] = await db.select<{ ativa: number; condicao: string }[]>(
+    "SELECT ativa, condicao FROM regra WHERE id = 'ritual_pendente'",
+  );
+  if (regra && regra.ativa !== 1) return false;
+  const [h, m] = ((JSON.parse(regra?.condicao ?? "{}").hora as string | undefined) ?? `${HORA_LEMBRETE_RITUAL}:00`)
+    .split(":")
+    .map(Number);
+  if (agora.getHours() * 60 + agora.getMinutes() < h * 60 + (m || 0)) return false;
   const dia = dataLocalIso(agora);
   if ((await lerConfig(CHAVE_FEITO)) === dia || (await lerConfig(CHAVE_LEMBRADO)) === dia) return false;
   await gravarConfig(CHAVE_LEMBRADO, dia);

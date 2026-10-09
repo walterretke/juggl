@@ -27,6 +27,7 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-single-instance = "2"
 enigo = "0.6.1"
+tauri-plugin-notification = "2"
 
 
 # Tempo sem usar o computador, para pausar o foco sozinho (src/ocioso.rs).

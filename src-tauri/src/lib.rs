@@ -68,6 +68,12 @@ fn migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/0002_prioridades.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "regras",
+            sql: include_str!("../migrations/0003_regras.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
@@ -379,6 +385,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _atalho, evento| {

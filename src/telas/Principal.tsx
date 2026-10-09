@@ -32,12 +32,14 @@ import {
 } from "../db/itens";
 import { listarPrioridades, type Prioridade } from "../db/prioridades";
 import { deveAbrirRitual, deveLembrarRitual, ritualFeitoHoje } from "../db/ritual";
+import { liberarAvisosDoFoco, verificarRegras } from "../regras/verificar";
 import Agora from "./Agora";
 import Configuracoes from "./Configuracoes";
 import Horas from "./Horas";
 import ItemLista, { type CampoEditavel, type Menu } from "./ItemLista";
 import PedidoNota from "./PedidoNota";
 import Pessoas from "./Pessoas";
+import Regras from "./Regras";
 import Ritual from "./Ritual";
 import { rotuloAtalho } from "./origens";
 
@@ -45,8 +47,8 @@ const MINUTO_MS = 60 * 1000;
 const MAX_DESFAZER = 30;
 
 /** Telas da janela principal: Agora (o foco), o ritual, as duas listas, Pessoas e Horas. */
-type Tela = "agora" | "ritual" | Lista | "pessoas" | "horas";
-const TELAS: Tela[] = ["agora", "ritual", "inbox", "a_fazer", "pessoas", "horas"];
+type Tela = "agora" | "ritual" | Lista | "pessoas" | "horas" | "regras";
+const TELAS: Tela[] = ["agora", "ritual", "inbox", "a_fazer", "pessoas", "horas", "regras"];
 const NOME_TELA: Record<Tela, string> = {
   agora: "Agora",
   ritual: "Ritual da manhã",
@@ -54,6 +56,7 @@ const NOME_TELA: Record<Tela, string> = {
   a_fazer: "A fazer",
   pessoas: "Pessoas",
   horas: "Horas da semana",
+  regras: "Regras",
 };
 
 function ehLista(tela: Tela): tela is Lista {
@@ -201,6 +204,30 @@ export default function Principal() {
       .then((lembrar) => lembrar && setLembreteRitual(true))
       .catch(() => {});
   }, [agora, pronto, ritualFeito]);
+
+  // Regras de notificação: a cada minuto. Uma regra pode marcar itens como do dia.
+  const carregarAtual = useRef(carregar);
+  carregarAtual.current = carregar;
+  useEffect(() => {
+    if (!pronto) return;
+    const rodar = () =>
+      verificarRegras()
+        .then((marcados) => {
+          if (marcados > 0) return carregarAtual.current();
+        })
+        .catch((e) => console.error("Regras:", e));
+    rodar();
+    const relogio = setInterval(rodar, MINUTO_MS);
+    return () => clearInterval(relogio);
+  }, [pronto]);
+
+  // Saiu do foco (pausa, troca ou conclusão): solta os avisos que o não perturbe segurou.
+  const focoAnterior = useRef<string | null>(null);
+  useEffect(() => {
+    const id = foco ? `${foco.item.id}-${foco.inicio}` : null;
+    if (focoAnterior.current && focoAnterior.current !== id) liberarAvisosDoFoco().catch(() => {});
+    focoAnterior.current = id;
+  }, [foco?.item.id, foco?.inicio]);
 
   useEffect(() => agendarBackupDiario((e) => setErro(`Backup diário falhou: ${e}`)), []);
 
@@ -451,6 +478,8 @@ export default function Principal() {
   const subtitulo =
     lista === "horas"
       ? "Tempo em foco por projeto e por dia, pronto para o apontamento."
+      : lista === "regras"
+      ? "Poucos avisos e certeiros. Ligue, desligue e ajuste cada regra."
       : lista === "ritual"
       ? "O que vence, quem cobrou e o que ficou pausado. Escolha até 3 para hoje."
       : lista === "pessoas"
@@ -688,6 +717,8 @@ export default function Principal() {
             />
           )}
 
+          {lista === "regras" && <Regras aoAvisar={mostrarAviso} />}
+
           {lista === "horas" && <Horas versao={`${foco?.item.id}-${foco?.inicio}`} aoAvisar={mostrarAviso} />}
 
           {lista === "agora" && (
@@ -798,6 +829,17 @@ export default function Principal() {
                 <Dica teclas="← →">trocar semana</Dica>
                 <Dica teclas="Ctrl+C">copiar</Dica>
                 <Dica teclas="Ctrl+S">exportar CSV</Dica>
+                <Dica teclas="Tab">trocar tela</Dica>
+              </>
+            ) : lista === "regras" ? (
+              <>
+                <Dica teclas="↑ ↓">escolher</Dica>
+                <Dica teclas="Espaço">ligar/desligar</Dica>
+                <Dica teclas="U">urgente</Dica>
+                <Dica teclas="N">nova regra</Dica>
+                <Dica teclas="Enter">editar</Dica>
+                <Dica teclas="Delete">remover</Dica>
+                <Dica teclas="T">testar</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
               </>
             ) : lista === "ritual" ? (

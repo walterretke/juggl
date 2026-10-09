@@ -69,7 +69,7 @@ Pelo teclado:
 
 - Na primeira abertura do dia, com algo pendente, o Juggl abre o **Ritual da manhã**: o que vence até amanhã (prazo ou promessa), o que alguém cobrou, o que ficou pausado, o resto de A fazer e a caixa de entrada.
 - Escolha até 3 para o dia com clique, arrastando para o quadro Hoje ou com `Espaço` (setas andam). Arraste dentro do Hoje para mudar a ordem. Depois, **Começar o dia** (`Enter`); `Esc` pula. As escolhidas ganham a etiqueta "Do dia" e ficam no topo de A fazer e das próximas do Agora.
-- Dá para pular. Se às 10h o ritual ainda não foi feito, o app lembra uma vez, com um aviso no topo.
+- Dá para pular. Se às 10h o ritual ainda não foi feito, o app lembra uma vez, com um aviso no topo e uma notificação (o horário se muda em Regras).
 
 ## Quem está cobrando
 
@@ -77,6 +77,15 @@ Pelo teclado:
 - `M` (ou clicar no prazo e escolher a aba "Prometi a…") guarda a data que você **prometeu** para quem pediu, separada do prazo. Ela aparece como "prometido sexta" e fica vermelha no dia e depois.
 - A tela **Pessoas** lista quem pediu o quê, com busca (`/`), pedidos abertos e cobranças. **Copiar resumo** (`Ctrl+C`) gera uma mensagem pronta para colar no Teams com o status de cada pedido.
 - Para arrumar pessoas: o lápis (`R`, ou dois cliques no nome) renomeia; a lixeira (`Delete`) exclui, e os pedidos continuam sem "quem pediu". Duplicadas ("carla" e "Carla") se juntam arrastando uma sobre a outra, ou renomeando uma com o nome da outra. Arrastar um pedido para outra pessoa troca quem pediu (`Z` desfaz).
+
+## Notificações e regras
+
+- A tela **Regras** liga e desliga as 6 regras prontas, cada uma com o seu número ou horário editável: prazo chegando (4 h antes), promessa esquecida (2 dias sem mexer), caixa de entrada acumulando (10 itens), ritual pendente (10:00), foco esquecido (timer há 2 h) e resumo do fim do dia (17:30, dias úteis). Prazo sem hora conta como vencendo às 18h.
+- Cada aviso sai uma vez só, como notificação do Windows. Vários ao mesmo tempo viram uma notificação só.
+- **Não perturbe** (ligado por padrão): enquanto há um item em foco, só as regras marcadas como **Urgente** notificam. O resto espera e chega junto quando você pausa ou conclui ("3 avisos enquanto você focava").
+- **Regras personalizadas** (`N` ou "+ Nova regra"): escolha quem pediu, projeto, prioridade, prazo, há quantos dias está parado e se alguém já cobrou; depois, notificar ou colocar entre as do dia. O app mostra a regra como frase, por exemplo "Se quem pediu for Carlos e estiver parado há 2 dias ou mais, notificar".
+- Teclado: setas escolhem, `Espaço` liga e desliga, `U` alterna urgente, `Enter` edita, `Delete` remove, `T` manda uma notificação de teste. Tudo também tem clique.
+- **Últimos avisos** lista o que saiu e o que está esperando o foco acabar.
 
 ## Horas da semana
 
