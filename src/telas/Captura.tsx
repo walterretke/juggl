@@ -11,6 +11,7 @@ import Origem from "./Origem";
 
 const LARGURA = 640;
 const MAX_SUGESTOES = 5;
+const NOME_PRIORIDADE = { alta: "Alta", media: "Média", baixa: "Baixa" } as const;
 
 interface Sugestoes {
   pessoas: string[];
@@ -145,18 +146,19 @@ export default function Captura() {
     }
   }
 
-  const etiquetas: { texto: string; classe?: string }[] = [];
-  if (captura.pessoa) etiquetas.push({ texto: `@${captura.pessoa}` });
-  if (captura.projeto) etiquetas.push({ texto: `#${captura.projeto}` });
-  if (captura.prioridade) etiquetas.push({ texto: `!${captura.prioridade}` });
-  if (captura.prazo) etiquetas.push({ texto: `prazo: ${descreverPrazo(captura.prazo, new Date())}` });
+  const etiquetas: { texto: string; classe: string }[] = [];
+  if (captura.pessoa) etiquetas.push({ texto: captura.pessoa, classe: "bg-destaque-claro text-destaque-tinta" });
+  if (captura.projeto) etiquetas.push({ texto: captura.projeto, classe: "bg-etiqueta text-tinta-2" });
+  if (captura.prioridade) etiquetas.push({ texto: NOME_PRIORIDADE[captura.prioridade], classe: "bg-atraso-claro text-atraso" });
+  if (captura.prazo) etiquetas.push({ texto: descreverPrazo(captura.prazo, new Date()), classe: "bg-etiqueta text-tinta-2" });
 
   return (
-    <div
-      ref={caixa}
-      className="border border-stone-300 border-l-4 border-l-amber-500 bg-white text-stone-900 dark:border-stone-700 dark:border-l-amber-500 dark:bg-stone-900 dark:text-stone-100"
-    >
+    <div ref={caixa} className="bg-folha px-[22px] pt-4 pb-3.5 text-tinta">
+      <label htmlFor="captura-texto" className="block text-xs font-semibold uppercase tracking-wider text-apagado">
+        O que chegou?
+      </label>
       <input
+        id="captura-texto"
         ref={entrada}
         autoFocus
         value={texto}
@@ -165,13 +167,13 @@ export default function Captura() {
           setErro(null);
         }}
         onKeyDown={aoTeclar}
-        placeholder="O que chegou?  @quem  #projeto  !alta  >sexta"
+        placeholder="Descreva o pedido"
         spellCheck={false}
-        className="h-16 w-full bg-transparent px-4 text-lg outline-none placeholder:text-stone-400 dark:placeholder:text-stone-500"
+        className="mt-1 h-10 w-full bg-transparent text-xl caret-destaque outline-none placeholder:text-apagado"
       />
 
       {opcoes.length > 0 && (
-        <ul className="border-t border-stone-200 py-1 dark:border-stone-800">
+        <ul className="mt-1 flex flex-wrap gap-1.5">
           {opcoes.map((opcao, i) => (
             <li
               key={opcao}
@@ -179,19 +181,25 @@ export default function Captura() {
                 e.preventDefault();
                 completar(opcao);
               }}
-              className={`cursor-pointer px-4 py-1 text-sm ${i === selecionada ? "bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-200" : ""}`}
+              className={`cursor-pointer rounded-lg px-2.5 py-1 text-sm ${i === selecionada ? "bg-destaque text-folha" : "bg-etiqueta text-tinta-2"}`}
             >
               {ultima?.[2]}
               {opcao}
             </li>
           ))}
+          <li className="self-center px-1 text-xs text-apagado">Tab aceita</li>
         </ul>
       )}
 
-      {(etiquetas.length > 0 || captura.link || erro) && (
-        <div className="flex flex-wrap items-center gap-2 border-t border-stone-200 px-4 py-2 text-xs dark:border-stone-800">
+      {(etiquetas.length > 0 || captura.link) && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {etiquetas.map((et) => (
+            <span key={et.texto + et.classe} className={`rounded-full px-2.5 py-0.5 text-[13px] ${et.classe}`}>
+              {et.texto}
+            </span>
+          ))}
           {captura.link && (
-            <span className="flex items-center gap-1 rounded-md bg-stone-100 px-2 py-0.5 dark:bg-stone-800">
+            <span className="flex items-center gap-1 rounded-full bg-etiqueta px-2.5 py-0.5">
               <Origem origem={captura.origem} id={captura.idExterno} />
               {captura.link === linkCopiado && (
                 <button
@@ -201,21 +209,23 @@ export default function Captura() {
                     e.preventDefault();
                     setLinkCopiado(null);
                   }}
-                  className="ml-1 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200"
+                  className="ml-1 text-apagado hover:text-tinta"
                 >
                   ×
                 </button>
               )}
             </span>
           )}
-          {etiquetas.map((et) => (
-            <span key={et.texto} className="rounded-md bg-stone-100 px-2 py-0.5 dark:bg-stone-800">
-              {et.texto}
-            </span>
-          ))}
-          {erro && <span className="text-red-600 dark:text-red-400">{erro}</span>}
         </div>
       )}
+
+      <div className="mt-3 border-t border-linha pt-2.5 text-xs text-apagado">
+        {erro ? (
+          <span className="text-atraso">{erro}</span>
+        ) : (
+          <>Use @pessoa, #projeto, !alta e &gt;sexta enquanto digita. Enter salva, Esc fecha.</>
+        )}
+      </div>
     </div>
   );
 }

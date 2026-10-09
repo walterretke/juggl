@@ -56,19 +56,19 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoFechar }: Props
 
   return (
     <div
-      className="fixed inset-0 z-10 flex items-start justify-center bg-stone-950/30 pt-16"
+      className="fixed inset-0 z-10 flex items-start justify-center bg-black/30 pt-16"
       onMouseDown={(e) => e.target === e.currentTarget && aoFechar()}
     >
-      <section className="w-[min(560px,90vw)] rounded-xl bg-white p-6 shadow-xl ring-1 ring-stone-200 dark:bg-stone-900 dark:ring-stone-800">
+      <section className="w-[min(560px,90vw)] rounded-2xl bg-folha p-7 text-tinta shadow-2xl ring-1 ring-linha">
         <header className="mb-5 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Configurações</h2>
-          <button type="button" onClick={aoFechar} className="text-stone-400 hover:text-stone-700 dark:hover:text-stone-200">
+          <h2 className="font-titulo text-2xl font-medium tracking-tight">Configurações</h2>
+          <button type="button" onClick={aoFechar} className="text-sm text-suave hover:text-tinta">
             Fechar <kbd className="ml-1 text-xs">Esc</kbd>
           </button>
         </header>
 
-        <h3 className="text-sm font-medium">Atalho da captura</h3>
-        <p className="mt-1 text-xs text-stone-500">
+        <h3 className="text-[15px] font-semibold">Atalho da captura</h3>
+        <p className="mt-1 text-sm text-suave">
           Atual: <strong>{rotuloAtalho(atalho)}</strong>. Clique no campo e aperte a combinação nova.
         </p>
         <div className="mt-2 flex gap-2">
@@ -93,25 +93,25 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoFechar }: Props
                 e.currentTarget.blur();
               }
             }}
-            className="flex-1 rounded-md border border-stone-300 bg-white px-2 py-1.5 text-sm outline-none focus:border-amber-500 dark:border-stone-700 dark:bg-stone-950"
+            className="flex-1 rounded-lg border border-linha bg-cartao px-3 py-2 text-[15px] outline-none focus:border-destaque"
           />
           <button
             type="button"
             disabled={!novoAtalho}
             onClick={salvarAtalho}
-            className="rounded-md bg-amber-500 px-3 text-sm font-medium text-stone-950 hover:bg-amber-400 disabled:opacity-40"
+            className="rounded-lg bg-destaque px-4 text-sm font-semibold text-folha hover:opacity-90 disabled:opacity-40"
           >
             Salvar
           </button>
         </div>
         {mensagemAtalho && (
-          <p className={`mt-2 text-xs ${mensagemAtalho.ok ? "text-emerald-700 dark:text-emerald-400" : "text-red-600"}`}>
+          <p className={`mt-2 text-xs ${mensagemAtalho.ok ? "text-destaque" : "text-atraso"}`}>
             {mensagemAtalho.texto}
           </p>
         )}
 
-        <h3 className="mt-6 text-sm font-medium">Backup</h3>
-        <p className="mt-1 text-xs text-stone-500">
+        <h3 className="mt-7 text-[15px] font-semibold">Backup</h3>
+        <p className="mt-1 text-sm text-suave">
           Uma cópia do banco é feita todo dia, e as 7 mais recentes ficam guardadas.
           {backups[0] && <> Último: {backups[0].split(/[\\/]/).pop()}.</>}
         </p>
@@ -119,7 +119,7 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoFechar }: Props
           <button
             type="button"
             onClick={fazerBackup}
-            className="rounded-md border border-stone-300 px-3 py-1.5 text-sm hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800"
+            className="rounded-lg border border-linha px-3.5 py-2 text-sm hover:bg-etiqueta"
           >
             Fazer backup agora
           </button>
@@ -127,14 +127,14 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoFechar }: Props
             type="button"
             disabled={!backups[0]}
             onClick={() => backups[0] && revealItemInDir(backups[0])}
-            className="rounded-md border border-stone-300 px-3 py-1.5 text-sm hover:bg-stone-100 disabled:opacity-40 dark:border-stone-700 dark:hover:bg-stone-800"
+            className="rounded-lg border border-linha px-3.5 py-2 text-sm hover:bg-etiqueta disabled:opacity-40"
           >
             Mostrar na pasta
           </button>
         </div>
-        {mensagemBackup && <p className="mt-2 text-xs text-stone-500">{mensagemBackup}</p>}
+        {mensagemBackup && <p className="mt-2 text-sm text-suave">{mensagemBackup}</p>}
 
-        <p className="mt-6 border-t border-stone-200 pt-4 text-xs text-stone-500 dark:border-stone-800">
+        <p className="mt-6 border-t border-linha pt-4 text-sm text-suave">
           Fechar a janela deixa o Juggl na bandeja do sistema, com o atalho ativo. Para sair, use Sair no ícone da bandeja.
         </p>
       </section>

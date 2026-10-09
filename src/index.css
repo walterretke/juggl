@@ -1,1 +1,54 @@
+@import "@fontsource-variable/fraunces";
+@import "@fontsource-variable/source-sans-3";
 @import "tailwindcss";
+
+/* Visual "Papel": tons quentes de papel no claro e de carvão no escuro.
+   O escuro segue o tema do sistema. */
+@theme {
+  --font-sans: "Source Sans 3 Variable", system-ui, sans-serif;
+  --font-titulo: "Fraunces Variable", Georgia, serif;
+
+  --color-fundo: #e9e5dc;
+  --color-folha: #fbfaf6;
+  --color-lateral: #f3f1ea;
+  --color-cartao: #ffffff;
+  --color-tinta: #2b2925;
+  --color-tinta-2: #4a463e;
+  --color-suave: #77736a;
+  --color-apagado: #9a958a;
+  --color-linha: #e6e2d8;
+  --color-etiqueta: #f1efe8;
+  --color-destaque: #3563d9;
+  --color-destaque-claro: #eef2fb;
+  --color-destaque-tinta: #2f52a8;
+  --color-atraso: #b04a2f;
+  --color-atraso-claro: #fbeee9;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-fundo: #121110;
+    --color-folha: #1c1b18;
+    --color-lateral: #171614;
+    --color-cartao: #252420;
+    --color-tinta: #ece8df;
+    --color-tinta-2: #d4cfc4;
+    --color-suave: #a29c90;
+    --color-apagado: #7d786e;
+    --color-linha: #2e2c27;
+    --color-etiqueta: #2a2824;
+    --color-destaque: #7d9cf0;
+    --color-destaque-claro: #232a3d;
+    --color-destaque-tinta: #a9bdf5;
+    --color-atraso: #f08a6c;
+    --color-atraso-claro: #3a2621;
+  }
+}
+
+html,
+body {
+  background: var(--color-folha);
+  color: var(--color-tinta);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}

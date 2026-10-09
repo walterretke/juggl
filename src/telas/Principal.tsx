@@ -20,8 +20,7 @@ import {
   type Mudancas,
 } from "../db/itens";
 import Configuracoes from "./Configuracoes";
-import Origem from "./Origem";
-import { rotuloAtalho } from "./origens";
+import { COR_ORIGEM, NOME_ORIGEM, rotuloAtalho } from "./origens";
 
 const MINUTO_MS = 60 * 1000;
 const MAX_DESFAZER = 30;
@@ -68,9 +67,9 @@ async function mudancasDaEdicao(campo: CampoEditavel, texto: string): Promise<Mu
 
 function classePrazo(prazo: string, agora: Date): string {
   const texto = descreverPrazo(prazo, agora);
-  if (texto.startsWith("atrasado")) return "font-medium text-red-600 dark:text-red-400";
-  if (texto === "hoje") return "font-medium text-amber-700 dark:text-amber-400";
-  return "text-stone-600 dark:text-stone-300";
+  if (texto.startsWith("atrasado")) return "font-semibold text-atraso";
+  if (texto === "hoje") return "font-semibold text-destaque";
+  return "text-suave";
 }
 
 export default function Principal() {
@@ -228,167 +227,204 @@ export default function Principal() {
   const sugestoesEdicao =
     edicao?.campo === "pessoa" ? sugestoes.pessoas : edicao?.campo === "projeto" ? sugestoes.projetos : [];
 
+  const total = itens?.length ?? 0;
+  const subtitulo =
+    itens === null
+      ? ""
+      : lista === "inbox"
+        ? total === 0
+          ? "Nada esperando triagem."
+          : `${total === 1 ? "Uma coisa chegou" : `${total} coisas chegaram`}. Decida o destino de cada uma.`
+        : total === 0
+          ? "Nada a fazer por enquanto."
+          : `${total === 1 ? "Uma tarefa" : `${total} tarefas`}, por prazo e prioridade.`;
+
+  function trocarLista(l: Lista) {
+    setLista(l);
+    setSelecionado(0);
+  }
+
+  const botaoCapturar = (
+    <button
+      type="button"
+      onClick={() => invoke("abrir_captura")}
+      title="Abre a mesma janela do atalho global"
+      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-suave hover:bg-folha hover:text-tinta"
+    >
+      <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true" className="shrink-0">
+        <path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+      <span className="flex-1">Nova captura</span>
+      <kbd className="font-sans text-xs text-apagado">{rotuloAtalho(atalho)}</kbd>
+    </button>
+  );
+
   return (
-    <div className="flex h-screen flex-col bg-stone-50 text-stone-800 dark:bg-stone-950 dark:text-stone-100">
-      <header className="flex items-center gap-4 border-b border-stone-200 px-6 py-3 dark:border-stone-800">
-        <span className="font-semibold tracking-tight">
-          Juggl<span className="text-amber-500">.</span>
-        </span>
-        <nav className="flex gap-1 rounded-lg bg-stone-200/70 p-1 text-sm dark:bg-stone-800">
+    <div className="flex h-screen bg-folha text-tinta">
+      <nav aria-label="Listas" className="hidden w-56 shrink-0 flex-col gap-1 bg-lateral px-4 py-7 md:flex">
+        <div className="px-3 pb-6 font-titulo text-[22px] font-semibold tracking-tight">Juggl</div>
+        {(["inbox", "a_fazer"] as Lista[]).map((l) => (
+          <button
+            key={l}
+            type="button"
+            onClick={() => trocarLista(l)}
+            className={`flex items-center justify-between rounded-lg px-3 py-2 text-[15px] ${
+              lista === l ? "bg-folha font-semibold text-tinta shadow-sm" : "text-tinta-2 hover:text-tinta"
+            }`}
+          >
+            {NOME_LISTA[l]}
+            <span className="text-[13px] font-normal tabular-nums text-apagado">{contagem[l] || ""}</span>
+          </button>
+        ))}
+        <div className="flex-1" />
+        {botaoCapturar}
+        <button
+          type="button"
+          onClick={() => setConfigAberta(true)}
+          className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-suave hover:bg-folha hover:text-tinta"
+        >
+          Configurações <kbd className="font-sans text-xs text-apagado">,</kbd>
+        </button>
+      </nav>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Janela estreita: as listas viram abas no topo. */}
+        <nav aria-label="Listas" className="flex items-center gap-1 border-b border-linha px-4 py-2 md:hidden">
           {(["inbox", "a_fazer"] as Lista[]).map((l) => (
             <button
               key={l}
               type="button"
-              onClick={() => {
-                setLista(l);
-                setSelecionado(0);
-              }}
-              className={`rounded-md px-3 py-1 ${
-                lista === l
-                  ? "bg-white font-medium shadow-sm dark:bg-stone-700"
-                  : "text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-100"
-              }`}
+              onClick={() => trocarLista(l)}
+              className={`rounded-full px-3 py-1 text-sm ${lista === l ? "bg-etiqueta font-semibold" : "text-suave"}`}
             >
-              {NOME_LISTA[l]} <span className="ml-1 tabular-nums text-stone-400">{contagem[l]}</span>
+              {NOME_LISTA[l]} <span className="tabular-nums text-apagado">{contagem[l] || ""}</span>
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => setConfigAberta(true)}
+            className="ml-auto px-2 text-sm text-suave hover:text-tinta"
+          >
+            Configurações
+          </button>
         </nav>
-        <button
-          type="button"
-          onClick={() => setConfigAberta(true)}
-          title="Configurações (,)"
-          className="ml-auto rounded-md px-2 py-1 text-sm text-stone-500 hover:bg-stone-200 hover:text-stone-800 dark:text-stone-400 dark:hover:bg-stone-800 dark:hover:text-stone-100"
-        >
-          Configurações
-        </button>
-        <button
-          type="button"
-          onClick={() => invoke("abrir_captura")}
-          className=" rounded-md bg-amber-500 px-3 py-1.5 text-sm font-medium text-stone-950 hover:bg-amber-400"
-        >
-          Capturar <span className="font-normal opacity-70">{rotuloAtalho(atalho)}</span>
-        </button>
-      </header>
 
-      {avisoAtalho && (
-        <p className="mx-6 mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-          O atalho global não funcionou: {avisoAtalho}. Use o botão Capturar enquanto isso.
-        </p>
-      )}
-      {erro && <p className="mx-6 mt-4 text-sm text-red-600">Erro no banco: {erro}</p>}
+        <main className="flex-1 overflow-y-auto px-6 pt-8 md:px-14 md:pt-11">
+          <h1 className="font-titulo text-[34px] font-medium leading-tight tracking-tight">{NOME_LISTA[lista]}</h1>
+          <p className="mt-1.5 mb-7 text-[15px] text-suave">{subtitulo}</p>
 
-      <main className="flex-1 overflow-y-auto px-3 py-2">
-        {itens?.length === 0 && (
-          <div className="mt-24 text-center text-stone-500">
-            {lista === "inbox" ? (
-              <>
-                <p className="text-base">Caixa de entrada vazia.</p>
-                <p className="mt-1 text-sm">Aperte {rotuloAtalho(atalho)} em qualquer janela para capturar um pedido.</p>
-              </>
-            ) : (
-              <p className="text-base">Nada a fazer. Triagem da caixa de entrada com Enter.</p>
-            )}
-          </div>
-        )}
+          {avisoAtalho && (
+            <p className="mb-5 rounded-xl bg-atraso-claro px-4 py-3 text-sm text-atraso">
+              O atalho global não funcionou: {avisoAtalho}. Use Nova captura enquanto isso.
+            </p>
+          )}
+          {erro && <p className="mb-5 rounded-xl bg-atraso-claro px-4 py-3 text-sm text-atraso">Erro no banco: {erro}</p>}
 
-        <ul>
-          {itens?.map((item, i) => {
-            const ativo = i === selecionado;
-            return (
-              <li
-                key={item.id}
-                id={`item-${i}`}
-                onClick={() => setSelecionado(i)}
-                onDoubleClick={() => item.link && openUrl(item.link)}
-                className={`group relative rounded-md px-3 py-2.5 ${
-                  ativo ? "bg-white shadow-sm ring-1 ring-stone-200 dark:bg-stone-900 dark:ring-stone-800" : ""
-                }`}
-              >
-                {ativo && <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-amber-500" />}
-                <div className="flex items-center gap-3">
-                  {item.prioridade === "alta" && (
-                    <span title="Prioridade alta" className="text-xs font-bold text-red-600 dark:text-red-400">
-                      !!
-                    </span>
-                  )}
-                  {item.prioridade === "media" && (
-                    <span title="Prioridade média" className="text-xs font-bold text-amber-600">
-                      !
-                    </span>
-                  )}
-                  <span className="min-w-0 flex-1 truncate text-[15px]">{item.titulo}</span>
-                  {item.prazo && (
-                    <span className={`shrink-0 text-xs ${classePrazo(item.prazo, agora)}`}>
-                      {descreverPrazo(item.prazo, agora)}
-                    </span>
-                  )}
-                  <span className="w-12 shrink-0 text-right text-xs tabular-nums text-stone-400" title="Parado há">
-                    {tempoParado(lista === "inbox" ? item.criado_em : item.atualizado_em, agora)}
-                  </span>
-                </div>
-                <div className="mt-1 flex items-center gap-3 text-xs text-stone-500 dark:text-stone-400">
-                  <Origem origem={item.origem} id={item.id_externo} />
-                  {item.pessoa && <span>@{item.pessoa}</span>}
-                  {item.projeto && <span>#{item.projeto}</span>}
-                </div>
+          {itens?.length === 0 && lista === "inbox" && (
+            <p className="mt-16 text-center text-[15px] text-apagado">
+              Aperte {rotuloAtalho(atalho)} em qualquer janela para capturar um pedido.
+            </p>
+          )}
 
-                {ativo && edicao && (
-                  <form
-                    className="mt-2"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      confirmarEdicao(item);
-                    }}
-                  >
-                    <label className="mb-1 block text-xs text-stone-500">{ROTULO_CAMPO[edicao.campo]}</label>
-                    <input
-                      autoFocus
-                      onFocus={(e) => e.target.select()}
-                      list="sugestoes-edicao"
-                      value={edicao.valor}
-                      onChange={(e) => setEdicao({ ...edicao, valor: e.target.value, erro: null })}
-                      onKeyDown={(e) => {
-                        if (e.key === "Escape") {
-                          e.preventDefault();
-                          setEdicao(null);
-                        }
-                      }}
-                      onBlur={() => setEdicao(null)}
-                      className="w-full rounded-md border border-stone-300 bg-white px-2 py-1 text-sm outline-none focus:border-amber-500 dark:border-stone-700 dark:bg-stone-950"
+          <ul className="flex flex-col gap-1.5 pb-6">
+            {itens?.map((item, i) => {
+              const ativo = i === selecionado;
+              const meta = [item.pessoa, item.projeto, origemComId(item)].filter(Boolean).join(" · ");
+              return (
+                <li
+                  key={item.id}
+                  id={`item-${i}`}
+                  onClick={() => setSelecionado(i)}
+                  onDoubleClick={() => item.link && openUrl(item.link)}
+                  className={`rounded-xl px-[18px] py-3.5 ${
+                    ativo ? "bg-cartao shadow-[0_0_0_1.5px_var(--color-destaque),0_4px_14px_rgba(0,0,0,0.08)]" : ""
+                  }`}
+                >
+                  <div className="flex items-center gap-4">
+                    <span
+                      title={NOME_ORIGEM[item.origem] ?? item.origem}
+                      className={`size-2.5 shrink-0 rounded-full ${COR_ORIGEM[item.origem] ?? COR_ORIGEM.manual}`}
                     />
-                    <datalist id="sugestoes-edicao">
-                      {sugestoesEdicao.map((s) => (
-                        <option key={s} value={s} />
-                      ))}
-                    </datalist>
-                    {edicao.erro && <p className="mt-1 text-xs text-red-600">{edicao.erro}</p>}
-                  </form>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </main>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-base font-medium">{item.titulo}</span>
+                        {item.prioridade === "alta" && (
+                          <span className="shrink-0 rounded-full bg-atraso-claro px-2 text-xs font-semibold text-atraso">Alta</span>
+                        )}
+                        {item.prioridade === "media" && (
+                          <span className="shrink-0 rounded-full bg-etiqueta px-2 text-xs font-semibold text-tinta-2">Média</span>
+                        )}
+                      </div>
+                      {meta && <div className="mt-0.5 truncate text-[13px] text-suave">{meta}</div>}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      {item.prazo && (
+                        <div className={`text-sm ${classePrazo(item.prazo, agora)}`}>{rotuloPrazo(item.prazo, agora)}</div>
+                      )}
+                      <div className="text-xs tabular-nums text-apagado" title="Parado há">
+                        {tempoParado(lista === "inbox" ? item.criado_em : item.atualizado_em, agora)}
+                      </div>
+                    </div>
+                  </div>
 
-      <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-stone-200 px-6 py-2 text-xs text-stone-500 dark:border-stone-800 dark:text-stone-400">
-        {aviso ? (
-          <span className="font-medium text-stone-800 dark:text-stone-100">{aviso}</span>
-        ) : (
-          <>
-            <Dica teclas="↑↓">navegar</Dica>
-            {lista === "inbox" && <Dica teclas="Enter">a fazer</Dica>}
-            <Dica teclas="P">prazo</Dica>
-            <Dica teclas="1 2 3">prioridade</Dica>
-            <Dica teclas="#">projeto</Dica>
-            <Dica teclas="@">quem pediu</Dica>
-            <Dica teclas="X">concluir</Dica>
-            <Dica teclas="E">arquivar</Dica>
-            <Dica teclas="Z">desfazer</Dica>
-            <Dica teclas="Tab">trocar lista</Dica>
-            <Dica teclas=",">configurações</Dica>
-          </>
-        )}
-      </footer>
+                  {ativo && edicao && (
+                    <form
+                      className="mt-3 pl-6"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        confirmarEdicao(item);
+                      }}
+                    >
+                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-apagado">
+                        {ROTULO_CAMPO[edicao.campo]}
+                      </label>
+                      <input
+                        autoFocus
+                        onFocus={(e) => e.target.select()}
+                        list="sugestoes-edicao"
+                        value={edicao.valor}
+                        onChange={(e) => setEdicao({ ...edicao, valor: e.target.value, erro: null })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            setEdicao(null);
+                          }
+                        }}
+                        onBlur={() => setEdicao(null)}
+                        className="w-full rounded-lg border border-linha bg-folha px-3 py-1.5 text-[15px] outline-none focus:border-destaque"
+                      />
+                      <datalist id="sugestoes-edicao">
+                        {sugestoesEdicao.map((s) => (
+                          <option key={s} value={s} />
+                        ))}
+                      </datalist>
+                      {edicao.erro && <p className="mt-1 text-sm text-atraso">{edicao.erro}</p>}
+                    </form>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </main>
+
+        <footer className="flex flex-wrap items-center gap-x-5 gap-y-1 px-6 py-4 text-[13px] text-apagado md:px-14">
+          {aviso ? (
+            <span className="font-semibold text-tinta">{aviso}</span>
+          ) : (
+            <>
+              {lista === "inbox" && <Dica teclas="Enter">mover para A fazer</Dica>}
+              <Dica teclas="P">prazo</Dica>
+              <Dica teclas="1 2 3">prioridade</Dica>
+              <Dica teclas="#">projeto</Dica>
+              <Dica teclas="@">quem pediu</Dica>
+              <Dica teclas="X">concluir</Dica>
+              <Dica teclas="E">arquivar</Dica>
+              <Dica teclas="Z">desfazer</Dica>
+              <Dica teclas="Tab">trocar lista</Dica>
+            </>
+          )}
+        </footer>
+      </div>
 
       {configAberta && (
         <Configuracoes atalho={atalho} aoMudarAtalho={setAtalho} aoFechar={() => setConfigAberta(false)} />
@@ -397,13 +433,22 @@ export default function Principal() {
   );
 }
 
+function origemComId(item: Item): string | null {
+  if (item.origem === "manual") return null;
+  const nome = NOME_ORIGEM[item.origem] ?? item.origem;
+  return item.id_externo ? `${nome} ${item.id_externo}` : nome;
+}
+
+/** "hoje" → "Hoje", para combinar com o resto da lista. */
+function rotuloPrazo(prazo: string, agora: Date): string {
+  const texto = descreverPrazo(prazo, agora);
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
 function Dica({ teclas, children }: { teclas: string; children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-1">
-      <kbd className="rounded border border-stone-300 bg-white px-1 font-sans text-[11px] text-stone-600 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-300">
-        {teclas}
-      </kbd>
-      {children}
+    <span>
+      <b className="font-semibold text-tinta-2">{teclas}</b> {children}
     </span>
   );
 }
