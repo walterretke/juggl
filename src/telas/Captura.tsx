@@ -7,7 +7,7 @@ import { descreverPrazo } from "../captura/datas";
 import { reconhecerLink } from "../captura/links";
 import { parseCaptura } from "../captura/parser";
 import { criarItem, listarSugestoes } from "../db/itens";
-import { COR_ORIGEM, NOME_ORIGEM } from "./origens";
+import Origem from "./Origem";
 
 const LARGURA = 640;
 const MAX_SUGESTOES = 5;
@@ -154,7 +154,7 @@ export default function Captura() {
   return (
     <div
       ref={caixa}
-      className="border border-neutral-300 bg-white text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+      className="border border-stone-300 border-l-4 border-l-amber-500 bg-white text-stone-900 dark:border-stone-700 dark:border-l-amber-500 dark:bg-stone-900 dark:text-stone-100"
     >
       <input
         ref={entrada}
@@ -167,11 +167,11 @@ export default function Captura() {
         onKeyDown={aoTeclar}
         placeholder="O que chegou?  @quem  #projeto  !alta  >sexta"
         spellCheck={false}
-        className="h-16 w-full bg-transparent px-4 text-lg outline-none placeholder:text-neutral-400"
+        className="h-16 w-full bg-transparent px-4 text-lg outline-none placeholder:text-stone-400 dark:placeholder:text-stone-500"
       />
 
       {opcoes.length > 0 && (
-        <ul className="border-t border-neutral-200 py-1 dark:border-neutral-800">
+        <ul className="border-t border-stone-200 py-1 dark:border-stone-800">
           {opcoes.map((opcao, i) => (
             <li
               key={opcao}
@@ -179,7 +179,7 @@ export default function Captura() {
                 e.preventDefault();
                 completar(opcao);
               }}
-              className={`cursor-pointer px-4 py-1 text-sm ${i === selecionada ? "bg-neutral-100 dark:bg-neutral-800" : ""}`}
+              className={`cursor-pointer px-4 py-1 text-sm ${i === selecionada ? "bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-200" : ""}`}
             >
               {ultima?.[2]}
               {opcao}
@@ -189,11 +189,10 @@ export default function Captura() {
       )}
 
       {(etiquetas.length > 0 || captura.link || erro) && (
-        <div className="flex flex-wrap items-center gap-2 border-t border-neutral-200 px-4 py-2 text-xs dark:border-neutral-800">
+        <div className="flex flex-wrap items-center gap-2 border-t border-stone-200 px-4 py-2 text-xs dark:border-stone-800">
           {captura.link && (
-            <span className={`flex items-center gap-1 rounded px-2 py-0.5 ${COR_ORIGEM[captura.origem]}`}>
-              {NOME_ORIGEM[captura.origem]}
-              {captura.idExterno ? ` ${captura.idExterno}` : ""}
+            <span className="flex items-center gap-1 rounded-md bg-stone-100 px-2 py-0.5 dark:bg-stone-800">
+              <Origem origem={captura.origem} id={captura.idExterno} />
               {captura.link === linkCopiado && (
                 <button
                   type="button"
@@ -202,7 +201,7 @@ export default function Captura() {
                     e.preventDefault();
                     setLinkCopiado(null);
                   }}
-                  className="ml-1 opacity-60 hover:opacity-100"
+                  className="ml-1 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200"
                 >
                   ×
                 </button>
@@ -210,7 +209,7 @@ export default function Captura() {
             </span>
           )}
           {etiquetas.map((et) => (
-            <span key={et.texto} className="rounded bg-neutral-100 px-2 py-0.5 dark:bg-neutral-800">
+            <span key={et.texto} className="rounded-md bg-stone-100 px-2 py-0.5 dark:bg-stone-800">
               {et.texto}
             </span>
           ))}

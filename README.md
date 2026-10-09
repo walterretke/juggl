@@ -26,6 +26,24 @@ npm run tauri dev
 
 Um link do Teams, Jira, ServiceNow ou Azure DevOps na área de transferência é anexado com a origem reconhecida (o × remove). Tab completa `@` e `#` já usados.
 
+## Triagem
+
+A janela principal tem duas listas: **Caixa de entrada** (o que foi capturado) e **A fazer** (o que já foi triado, ordenado por prazo e prioridade). Tudo pelo teclado:
+
+| Tecla | Ação |
+| --- | --- |
+| `↑` `↓` (ou `J` `K`) | navegar |
+| `Enter` | mover da caixa de entrada para A fazer |
+| `P` | prazo (`hoje`, `amanha`, `sexta`, `15/10`; vazio tira) |
+| `1` `2` `3` `0` | prioridade alta, média, baixa, sem |
+| `#` / `@` | projeto / quem pediu |
+| `R` | renomear |
+| `X` / `E` | concluir / arquivar |
+| `Z` | desfazer |
+| `O` | abrir o link |
+| `Tab` | trocar de lista |
+| `C` | capturar |
+
 ## Testes
 
 ```sh
