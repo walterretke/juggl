@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { descreverPrazo, tempoParado } from "../captura/datas";
 import { interpretarPrazo, type Prioridade } from "../captura/parser";
+import { agendarBackupDiario } from "../db/backup";
 import { ATALHO_PADRAO, lerConfig } from "../db/config";
 import {
   alterarItem,
@@ -18,6 +19,7 @@ import {
   type Lista,
   type Mudancas,
 } from "../db/itens";
+import Configuracoes from "./Configuracoes";
 import Origem from "./Origem";
 import { rotuloAtalho } from "./origens";
 
@@ -77,6 +79,7 @@ export default function Principal() {
   const [contagem, setContagem] = useState<Record<Lista, number>>({ inbox: 0, a_fazer: 0 });
   const [selecionado, setSelecionado] = useState(0);
   const [edicao, setEdicao] = useState<Edicao | null>(null);
+  const [configAberta, setConfigAberta] = useState(false);
   const [sugestoes, setSugestoes] = useState<{ pessoas: string[]; projetos: string[] }>({ pessoas: [], projetos: [] });
   const [aviso, setAviso] = useState<string | null>(null);
   const [atalho, setAtalho] = useState(ATALHO_PADRAO);
@@ -109,6 +112,8 @@ export default function Principal() {
       })
       .catch((e) => setAvisoAtalho(String(e)));
   }, []);
+
+  useEffect(() => agendarBackupDiario((e) => setErro(`Backup diário falhou: ${e}`)), []);
 
   useEffect(() => {
     carregar();
@@ -171,7 +176,7 @@ export default function Principal() {
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
       // # e @ podem vir com AltGr (Ctrl+Alt no Windows) em alguns teclados.
-      if (edicao || ((e.ctrlKey || e.metaKey || e.altKey) && e.key !== "#" && e.key !== "@")) return;
+      if (edicao || configAberta || ((e.ctrlKey || e.metaKey || e.altKey) && e.key !== "#" && e.key !== "@")) return;
       const item = itens?.[selecionado];
       const tecla = e.key;
 
@@ -183,6 +188,7 @@ export default function Principal() {
           setSelecionado(0);
         },
         c: () => invoke("abrir_captura"),
+        ",": () => setConfigAberta(true),
         z: () => desfazerUltima(),
       };
       acoes.j = acoes.ArrowDown;
@@ -212,7 +218,7 @@ export default function Principal() {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [edicao, itens, selecionado, lista, aplicar]);
+  }, [edicao, configAberta, itens, selecionado, lista, aplicar]);
 
   // Mantém o item selecionado visível ao navegar pelo teclado.
   useEffect(() => {
@@ -249,8 +255,16 @@ export default function Principal() {
         </nav>
         <button
           type="button"
+          onClick={() => setConfigAberta(true)}
+          title="Configurações (,)"
+          className="ml-auto rounded-md px-2 py-1 text-sm text-stone-500 hover:bg-stone-200 hover:text-stone-800 dark:text-stone-400 dark:hover:bg-stone-800 dark:hover:text-stone-100"
+        >
+          Configurações
+        </button>
+        <button
+          type="button"
           onClick={() => invoke("abrir_captura")}
-          className="ml-auto rounded-md bg-amber-500 px-3 py-1.5 text-sm font-medium text-stone-950 hover:bg-amber-400"
+          className=" rounded-md bg-amber-500 px-3 py-1.5 text-sm font-medium text-stone-950 hover:bg-amber-400"
         >
           Capturar <span className="font-normal opacity-70">{rotuloAtalho(atalho)}</span>
         </button>
@@ -371,9 +385,14 @@ export default function Principal() {
             <Dica teclas="E">arquivar</Dica>
             <Dica teclas="Z">desfazer</Dica>
             <Dica teclas="Tab">trocar lista</Dica>
+            <Dica teclas=",">configurações</Dica>
           </>
         )}
       </footer>
+
+      {configAberta && (
+        <Configuracoes atalho={atalho} aoMudarAtalho={setAtalho} aoFechar={() => setConfigAberta(false)} />
+      )}
     </div>
   );
 }

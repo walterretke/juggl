@@ -44,6 +44,13 @@ A janela principal tem duas listas: **Caixa de entrada** (o que foi capturado) e
 | `Tab` | trocar de lista |
 | `C` | capturar |
 
+## Bandeja, configurações e backup
+
+- Fechar a janela deixa o Juggl na bandeja do sistema, com o atalho ativo. O ícone tem Capturar, Abrir o Juggl e Sair.
+- Abrir o Juggl de novo só traz a janela existente. `juggl --captura` abre direto a captura (útil no Linux com Wayland: ligue esse comando a um atalho do sistema).
+- `,` abre as configurações: trocar o atalho da captura e fazer backup na hora.
+- Todo dia uma cópia do banco vai para a subpasta `backups/`, guardando as 7 mais recentes.
+
 ## Testes
 
 ```sh
