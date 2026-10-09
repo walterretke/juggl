@@ -11,19 +11,24 @@ interface Props {
   /** Ritual salvo: volta para o Agora. */
   aoComecar: (quantos: number) => void;
   aoPular: () => void;
+  /** Um item começou a ser arrastado (para soltar no Agora ou nas listas da barra lateral). */
+  aoArrastar: (item: Item) => void;
 }
+
+const TIPO_RITUAL = "text/juggl-ritual";
 
 function Etiqueta({ children, classe = "bg-etiqueta text-tinta-2" }: { children: React.ReactNode; classe?: string }) {
   return <span className={`shrink-0 rounded-full px-2 text-xs font-semibold ${classe}`}>{children}</span>;
 }
 
 /** Ritual da manhã: o que vence, quem cobrou e o que ficou pausado, para escolher as 3 do dia. */
-export default function Ritual({ versao, aoComecar, aoPular }: Props) {
+export default function Ritual({ versao, aoComecar, aoPular, aoArrastar }: Props) {
   const [itens, setItens] = useState<Item[] | null>(null);
   const [escolhidos, setEscolhidos] = useState<string[]>([]);
   const [cursor, setCursor] = useState(0);
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [alvoHoje, setAlvoHoje] = useState<number | null>(null);
   const hoje = new Date();
   const diaHoje = dataLocalIso(hoje);
 
@@ -58,6 +63,46 @@ export default function Ritual({ versao, aoComecar, aoPular }: Props) {
     [escolhidos],
   );
 
+  /** Soltar um item numa vaga do Hoje: escolhe ou muda a ordem; vaga cheia troca pelo novo. */
+  function soltarNaVaga(id: string, vaga: number) {
+    setAlvoHoje(null);
+    if (!porId.has(id)) return;
+    const resto = escolhidos.filter((e) => e !== id);
+    if (!escolhidos.includes(id) && resto.length >= MAX_DO_DIA) resto.splice(vaga, 1);
+    resto.splice(Math.min(vaga, resto.length), 0, id);
+    setEscolhidos(resto.slice(0, MAX_DO_DIA));
+    setAviso(null);
+  }
+
+  function alvoDaVaga(vaga: number) {
+    return {
+      onDragOver: (e: React.DragEvent) => {
+        if (!e.dataTransfer.types.includes(TIPO_RITUAL)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setAlvoHoje(vaga);
+      },
+      onDragLeave: () => setAlvoHoje((a) => (a === vaga ? null : a)),
+      onDrop: (e: React.DragEvent) => {
+        e.preventDefault();
+        soltarNaVaga(e.dataTransfer.getData(TIPO_RITUAL), vaga);
+      },
+    };
+  }
+
+  function arrastavel(item: Item) {
+    return {
+      draggable: true,
+      onDragStart: (e: React.DragEvent) => {
+        e.dataTransfer.setData(TIPO_RITUAL, item.id);
+        e.dataTransfer.setData("text/juggl-item", item.id);
+        e.dataTransfer.effectAllowed = "move";
+        aoArrastar(item);
+      },
+      onDragEnd: () => setAlvoHoje(null),
+    };
+  }
+
   const comecar = useCallback(async () => {
     try {
       await salvarRitual(escolhidos);
@@ -75,12 +120,13 @@ export default function Ritual({ versao, aoComecar, aoPular }: Props) {
       else if (e.key === "ArrowUp" || e.key === "k") setCursor((c) => Math.max(c - 1, 0));
       else if (e.key === " " && ordem[cursor]) alternar(ordem[cursor].id);
       else if (e.key === "Enter") comecar();
+      else if (e.key === "Escape") aoPular();
       else return;
       e.preventDefault();
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [ordem, cursor, alternar, comecar]);
+  }, [ordem, cursor, alternar, comecar, aoPular]);
 
   useEffect(() => {
     document.getElementById(`ritual-${cursor}`)?.scrollIntoView({ block: "nearest" });
@@ -97,7 +143,17 @@ export default function Ritual({ versao, aoComecar, aoPular }: Props) {
           {Array.from({ length: MAX_DO_DIA }, (_, i) => {
             const item = porId.get(escolhidos[i]);
             return (
-              <li key={i} className="flex min-h-9 items-center gap-3">
+              <li
+                key={i}
+                {...alvoDaVaga(item ? i : Math.min(i, escolhidos.length))}
+                {...(item ? arrastavel(item) : {})}
+                title={item ? "Arraste para mudar a ordem" : undefined}
+                className={`-mx-2 flex min-h-9 items-center gap-3 rounded-lg px-2 ${
+                  alvoHoje === i || (!item && alvoHoje === escolhidos.length && i === escolhidos.length)
+                    ? "bg-destaque-claro ring-2 ring-destaque"
+                    : ""
+                }`}
+              >
                 <span
                   className={`flex size-6 shrink-0 items-center justify-center rounded-md text-xs font-semibold ${
                     item ? "bg-destaque text-folha" : "border border-dashed border-apagado text-apagado"
@@ -117,7 +173,7 @@ export default function Ritual({ versao, aoComecar, aoPular }: Props) {
                     </button>
                   </>
                 ) : (
-                  <span className="text-[15px] text-apagado">Escolha na lista abaixo</span>
+                  <span className="text-[15px] text-apagado">Clique ou arraste um item da lista abaixo</span>
                 )}
               </li>
             );
@@ -156,7 +212,7 @@ export default function Ritual({ versao, aoComecar, aoPular }: Props) {
               const promessa = item.prometido_para ? descreverPrazo(item.prometido_para, hoje) : null;
               const atrasado = (t: string | null) => t?.startsWith("atrasado") || t === "hoje";
               return (
-                <li key={item.id} id={`ritual-${indice}`}>
+                <li key={item.id} id={`ritual-${indice}`} {...arrastavel(item)}>
                   <button
                     type="button"
                     aria-pressed={posicao >= 0}

@@ -61,13 +61,13 @@ export default function Horas({ versao, aoAvisar }: Props) {
   const hoje = dataLocalIso(new Date());
 
   async function copiar() {
-    if (!resumo) return;
+    if (!resumo || resumo.total === 0) return;
     await writeText(tabelaSemana(resumo, "\t"));
     aoAvisar("Tabela copiada. Cole numa planilha ou no sistema de apontamento.");
   }
 
   async function exportar() {
-    if (!resumo) return;
+    if (!resumo || resumo.total === 0) return;
     try {
       // BOM para o Excel reconhecer os acentos.
       const caminho = await invoke<string>("salvar_csv", {
@@ -87,6 +87,22 @@ export default function Horas({ versao, aoAvisar }: Props) {
     await carregar();
   }
 
+  // Teclado: ← → trocam a semana, Ctrl+C copia, Ctrl+S exporta o CSV.
+  useEffect(() => {
+    function aoTeclar(e: KeyboardEvent) {
+      if (e.target instanceof HTMLElement && e.target.closest("input, textarea")) return;
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (!ctrl && e.key === "ArrowLeft") setSegunda((s) => somarDias(s, -7));
+      else if (!ctrl && e.key === "ArrowRight") setSegunda((s) => somarDias(s, 7));
+      else if (ctrl && e.key.toLowerCase() === "c" && !window.getSelection()?.toString()) copiar();
+      else if (ctrl && e.key.toLowerCase() === "s") exportar();
+      else return;
+      e.preventDefault();
+    }
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  });
+
   function alternar(chave: string) {
     const novos = new Set(abertos);
     if (novos.has(chave)) novos.delete(chave);
@@ -100,11 +116,11 @@ export default function Horas({ versao, aoAvisar }: Props) {
   return (
     <div className="pb-6">
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" aria-label="Semana anterior" onClick={() => setSegunda(somarDias(segunda, -7))} className={botao}>
+        <button type="button" aria-label="Semana anterior" title="Semana anterior (←)" onClick={() => setSegunda(somarDias(segunda, -7))} className={botao}>
           ‹
         </button>
         <span className="min-w-44 text-center text-[15px] font-semibold">{rotuloSemana(segunda)}</span>
-        <button type="button" aria-label="Próxima semana" onClick={() => setSegunda(somarDias(segunda, 7))} className={botao}>
+        <button type="button" aria-label="Próxima semana" title="Próxima semana (→)" onClick={() => setSegunda(somarDias(segunda, 7))} className={botao}>
           ›
         </button>
         {!estaSemana && (
@@ -113,13 +129,14 @@ export default function Horas({ versao, aoAvisar }: Props) {
           </button>
         )}
         <div className="flex-1" />
-        <button type="button" disabled={vazio} onClick={copiar} className={botao}>
+        <button type="button" disabled={vazio} onClick={copiar} title="Copiar a tabela (Ctrl+C)" className={botao}>
           Copiar
         </button>
         <button
           type="button"
           disabled={vazio}
           onClick={exportar}
+          title="Salvar CSV em Downloads (Ctrl+S)"
           className="rounded-lg bg-destaque px-3 py-1.5 text-sm font-semibold text-folha hover:opacity-90 disabled:opacity-40"
         >
           Exportar CSV

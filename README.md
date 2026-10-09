@@ -67,20 +67,21 @@ Pelo teclado:
 ## Ritual da manhã
 
 - Na primeira abertura do dia, com algo pendente, o Juggl abre o **Ritual da manhã**: o que vence até amanhã (prazo ou promessa), o que alguém cobrou, o que ficou pausado, o resto de A fazer e a caixa de entrada.
-- Escolha até 3 para o dia com clique ou `Espaço` (setas andam) e aperte **Começar o dia** (`Enter`). As escolhidas ganham a etiqueta "Do dia" e ficam no topo de A fazer e das próximas do Agora.
+- Escolha até 3 para o dia com clique, arrastando para o quadro Hoje ou com `Espaço` (setas andam). Arraste dentro do Hoje para mudar a ordem. Depois, **Começar o dia** (`Enter`); `Esc` pula. As escolhidas ganham a etiqueta "Do dia" e ficam no topo de A fazer e das próximas do Agora.
 - Dá para pular. Se às 10h o ritual ainda não foi feito, o app lembra uma vez, com um aviso no topo.
 
 ## Quem está cobrando
 
 - `B` (ou o sininho do item, ou o botão no Agora) registra que quem pediu **cobrou de novo**. O item mostra "cobrou 2×", sobe em A fazer e entra no grupo "Alguém cobrou" do ritual. `Z` desfaz.
 - `M` (ou clicar no prazo e escolher a aba "Prometi a…") guarda a data que você **prometeu** para quem pediu, separada do prazo. Ela aparece como "prometido sexta" e fica vermelha no dia e depois.
-- A tela **Pessoas** lista quem pediu o quê, com busca (`/`), pedidos abertos e cobranças. **Copiar resumo** gera uma mensagem pronta para colar no Teams com o status de cada pedido.
+- A tela **Pessoas** lista quem pediu o quê, com busca (`/`), pedidos abertos e cobranças. **Copiar resumo** (`Ctrl+C`) gera uma mensagem pronta para colar no Teams com o status de cada pedido.
+- Para arrumar pessoas: o lápis (`R`, ou dois cliques no nome) renomeia; a lixeira (`Delete`) exclui, e os pedidos continuam sem "quem pediu". Duplicadas ("carla" e "Carla") se juntam arrastando uma sobre a outra, ou renomeando uma com o nome da outra. Arrastar um pedido para outra pessoa troca quem pediu (`Z` desfaz).
 
 ## Horas da semana
 
-- A tela **Horas da semana** soma o tempo em foco por projeto e por dia (segunda a domingo), com `‹` `›` para trocar de semana. Clicar num projeto mostra os itens.
+- A tela **Horas da semana** soma o tempo em foco por projeto e por dia (segunda a domingo), com `‹` `›` (ou as setas `←` `→`) para trocar de semana. Clicar num projeto mostra os itens.
 - Cada projeto pode ter um código de apontamento (clique em "+ código").
-- **Copiar** põe a tabela na área de transferência, pronta para colar numa planilha. **Exportar CSV** grava `juggl-horas-AAAA-MM-DD.csv` em Downloads (separado por `;`, abre direto no Excel). Os dois usam horas decimais: 1,50 é uma hora e meia.
+- **Copiar** (`Ctrl+C`) põe a tabela na área de transferência, pronta para colar numa planilha. **Exportar CSV** (`Ctrl+S`) grava `juggl-horas-AAAA-MM-DD.csv` em Downloads (separado por `;`, abre direto no Excel). Os dois usam horas decimais: 1,50 é uma hora e meia.
 
 ## Bandeja, configurações e backup
 

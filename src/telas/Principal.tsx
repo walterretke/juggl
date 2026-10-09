@@ -130,6 +130,8 @@ export default function Principal() {
   const [ritualFeito, setRitualFeito] = useState(true);
   const [lembreteRitual, setLembreteRitual] = useState(false);
   const desfazer = useRef<Alteracao[]>([]);
+  /** Item arrastado de uma tela que não é lista (Ritual, Pessoas), para soltar na barra lateral. */
+  const arrastado = useRef<Item | null>(null);
   const timerAviso = useRef<number | undefined>(undefined);
 
   const carregar = useCallback(async () => {
@@ -518,7 +520,8 @@ export default function Principal() {
       onDrop: (e: React.DragEvent) => {
         e.preventDefault();
         setAlvoArrasto(null);
-        const item = itens?.find((i) => i.id === e.dataTransfer.getData("text/juggl-item"));
+        const id = e.dataTransfer.getData("text/juggl-item");
+        const item = itens?.find((i) => i.id === id) ?? (arrastado.current?.id === id ? arrastado.current : null);
         if (!item) return;
         if (destino === "agora") focar(item);
         else if (ehLista(destino) && destino !== lista)
@@ -663,10 +666,21 @@ export default function Principal() {
                 carregar();
               }}
               aoPular={() => trocarLista(foco ? "agora" : "inbox")}
+              aoArrastar={(item) => (arrastado.current = item)}
             />
           )}
 
-          {lista === "pessoas" && <Pessoas versao={versao} aoCobrar={cobrar} aoFocar={focar} aoAvisar={mostrarAviso} />}
+          {lista === "pessoas" && (
+            <Pessoas
+              versao={versao}
+              aoCobrar={cobrar}
+              aoFocar={focar}
+              aoMudarPessoa={(item, pessoa_id, nome) => aplicar(item, { pessoa_id }, `Pedido passou para ${nome}`)}
+              aoArrastar={(item) => (arrastado.current = item)}
+              aoAlterar={carregar}
+              aoAvisar={mostrarAviso}
+            />
+          )}
 
           {lista === "horas" && <Horas versao={`${foco?.item.id}-${foco?.inicio}`} aoAvisar={mostrarAviso} />}
 
@@ -751,18 +765,27 @@ export default function Principal() {
             </span>
           ) : (
             lista === "horas" ? (
-              <Dica teclas="Tab">trocar tela</Dica>
+              <>
+                <Dica teclas="← →">trocar semana</Dica>
+                <Dica teclas="Ctrl+C">copiar</Dica>
+                <Dica teclas="Ctrl+S">exportar CSV</Dica>
+                <Dica teclas="Tab">trocar tela</Dica>
+              </>
             ) : lista === "ritual" ? (
               <>
                 <Dica teclas="↑ ↓">andar</Dica>
                 <Dica teclas="Espaço">escolher</Dica>
                 <Dica teclas="Enter">começar o dia</Dica>
+                <Dica teclas="Esc">pular</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
               </>
             ) : lista === "pessoas" ? (
               <>
                 <Dica teclas="/">buscar</Dica>
-                <Dica teclas="↑ ↓">trocar pessoa (na busca)</Dica>
+                <Dica teclas="↑ ↓">trocar pessoa</Dica>
+                <Dica teclas="R">renomear</Dica>
+                <Dica teclas="Delete">excluir</Dica>
+                <Dica teclas="Ctrl+C">copiar resumo</Dica>
                 <Dica teclas="Z">desfazer</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
               </>

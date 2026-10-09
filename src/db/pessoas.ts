@@ -1,3 +1,4 @@
+import { normalizarNome } from "../captura/parser";
 import { getDb } from ".";
 import { SELECT_ITEM, type Item } from "./itens";
 
@@ -45,4 +46,32 @@ export async function itensDaPessoa(pessoaId: string): Promise<Item[]> {
                item.prazo IS NULL, item.prazo, item.criado_em`,
     [pessoaId],
   );
+}
+
+/** Outra pessoa com o mesmo nome (ignorando maiúsculas, acentos, espaços e _), se houver. */
+export async function pessoaComNome(nome: string, excetoId: string): Promise<ResumoPessoa | null> {
+  const alvo = normalizarNome(nome);
+  const todas = await listarPessoas();
+  return todas.find((p) => p.id !== excetoId && (normalizarNome(p.apelido) === alvo || normalizarNome(p.nome) === alvo)) ?? null;
+}
+
+/** Troca o nome (usado também no @ da captura). Quem chama confere antes se o nome já existe. */
+export async function renomearPessoa(id: string, nome: string): Promise<void> {
+  const db = await getDb();
+  const limpo = nome.trim().replace(/^@/, "");
+  await db.execute("UPDATE pessoa SET nome = $1, apelido = $1 WHERE id = $2", [limpo, id]);
+}
+
+/** Junta duas pessoas: os pedidos de `origemId` passam para `destinoId` e a origem some. */
+export async function juntarPessoas(origemId: string, destinoId: string): Promise<void> {
+  const db = await getDb();
+  await db.execute("UPDATE item SET pessoa_id = $1 WHERE pessoa_id = $2", [destinoId, origemId]);
+  await db.execute("DELETE FROM pessoa WHERE id = $1", [origemId]);
+}
+
+/** Exclui a pessoa. Os pedidos dela continuam, só ficam sem "quem pediu". */
+export async function excluirPessoa(id: string): Promise<void> {
+  const db = await getDb();
+  await db.execute("UPDATE item SET pessoa_id = NULL WHERE pessoa_id = $1", [id]);
+  await db.execute("DELETE FROM pessoa WHERE id = $1", [id]);
 }
