@@ -17,11 +17,11 @@ npm run tauri dev
 
 `Ctrl+Shift+Espaço` abre a captura sobre qualquer janela. Enter salva na caixa de entrada, Esc cancela.
 
-Se houver texto selecionado na janela em uso, ele vira a descrição. Para isso o Juggl simula o comando de copiar (Ctrl+Insert no Windows e no Linux, Cmd+C no macOS) e depois devolve a área de transferência como estava. Dá para desligar nas configurações. Limitações: no macOS o Juggl precisa da permissão de Acessibilidade; no Linux com Wayland não funciona; se a área de transferência tinha uma imagem, ela é trocada pelo texto copiado.
+Toda atividade tem título e descrição. Se houver texto selecionado na janela em uso, ele vira a descrição (com as quebras de linha) e o título já vem preenchido como "Atividade 1", "Atividade 2"... e selecionado, para trocar digitando por cima. Título vazio com descrição também vira "Atividade N"; o número só avança quando esse nome é usado. Para pegar a seleção o Juggl simula o comando de copiar (Ctrl+Insert no Windows e no Linux, Cmd+C no macOS) e depois devolve a área de transferência como estava. Dá para desligar nas configurações. Limitações: no macOS o Juggl precisa da permissão de Acessibilidade; no Linux com Wayland não funciona; se a área de transferência tinha uma imagem, ela é trocada pelo texto copiado.
 
-O modo padrão é um formulário: descrição, quem pediu e projeto (com sugestões dos nomes já usados), prioridade e prazo (Hoje, Amanhã ou um calendário). Tab passa de um campo para o outro, as setas escolhem a prioridade e o prazo, e Enter salva de qualquer campo.
+O modo padrão é um formulário: título, descrição (Shift+Enter quebra a linha), quem pediu e projeto (com sugestões dos nomes já usados), prioridade e prazo (Hoje, Amanhã ou um calendário). Tab passa de um campo para o outro, as setas escolhem a prioridade e o prazo, e Enter salva de qualquer campo.
 
-`Ctrl+.` troca para o modo avançado, uma linha só com marcações (o modo escolhido fica salvo):
+`Ctrl+.` troca para o modo avançado, uma linha de título com marcações, mais a descrição embaixo (o modo escolhido fica salvo):
 
 | Marcação | Exemplo | Vira |
 | --- | --- | --- |
@@ -57,6 +57,7 @@ Pelo teclado:
 
 ## Foco e timer
 
+- A descrição aparece embaixo do título nas listas; clique nela, no ícone de linhas ou aperte `D` para editar (no Agora também). Enter salva, Shift+Enter quebra a linha.
 - `F` em qualquer item põe ele em foco e abre a tela **Agora**, com o timer correndo. Só um item fica em foco por vez.
 - Na tela Agora: `P` pausa (pergunta onde você parou), `X` conclui e `1` `2` `3` focam uma das próximas de A fazer.
 - Trocar de foco pausa o item anterior com a nota de onde parou. Itens pausados voltam para A fazer mostrando essa nota.

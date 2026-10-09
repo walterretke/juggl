@@ -5,10 +5,12 @@ import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { reconhecerLink } from "../captura/links";
 import { parseCaptura, type Captura as DadosCaptura } from "../captura/parser";
-import { gravarConfig, lerConfig } from "../db/config";
+import { resolverTitulo, tituloPadrao } from "../captura/titulo";
+import { avancarNumeroAtividade, gravarConfig, lerConfig, lerNumeroAtividade } from "../db/config";
 import { criarItem, listarSugestoes } from "../db/itens";
 import { listarPrioridades, type Prioridade } from "../db/prioridades";
 import Avancada from "./captura/Avancada";
+import CampoDescricao from "./captura/CampoDescricao";
 import Formulario, { FORMULARIO_VAZIO, type ValoresFormulario } from "./captura/Formulario";
 import Origem from "./Origem";
 
@@ -44,7 +46,7 @@ function esconder(devolverFoco: boolean) {
 function capturaDoFormulario(valores: ValoresFormulario, link: string | null): DadosCaptura {
   const reconhecido = link ? reconhecerLink(link) : null;
   return {
-    titulo: valores.descricao.trim(),
+    titulo: valores.titulo.trim(),
     pessoa: valores.pessoa.trim() || null,
     projeto: valores.projeto.trim() || null,
     prioridade: valores.prioridadeId,
@@ -59,6 +61,9 @@ export default function Captura() {
   const [modo, setModo] = useState<Modo>("formulario");
   const [valores, setValores] = useState<ValoresFormulario>(FORMULARIO_VAZIO);
   const [texto, setTexto] = useState("");
+  const [descricao, setDescricao] = useState("");
+  /** Número do próximo título sugerido ("Atividade N"). */
+  const [numero, setNumero] = useState(1);
   const [linkCopiado, setLinkCopiado] = useState<string | null>(null);
   const [sugestoes, setSugestoes] = useState<Sugestoes>({ pessoas: [], projetos: [] });
   const [prioridades, setPrioridades] = useState<Prioridade[]>([]);
@@ -75,19 +80,28 @@ export default function Captura() {
     lerConfig("modo_captura").then((salvo) => salvo === "avancado" && setModo("avancado"));
   }, []);
 
-  // Cada atalho: lê a área de transferência, atualiza as listas e foca a descrição.
+  // Cada atalho: lê a área de transferência, atualiza as listas e foca o título.
   // O que foi digitado continua se a captura foi escondida por perda de foco, a menos
-  // que haja texto selecionado: aí ele vira a descrição.
+  // que haja texto selecionado: aí ele vira a descrição e o título sugerido
+  // ("Atividade N") já vem preenchido e selecionado, para trocar digitando por cima.
   useEffect(() => {
     const parar = listen<Abertura>("captura:aberta", async ({ payload }) => {
       momentoAtalho.current = payload.momento;
       setErro(null);
+      const n = await lerNumeroAtividade().catch(() => 1);
+      setNumero(n);
       if (payload.selecao) {
-        const selecao = payload.selecao;
-        setValores((v) => ({ ...v, descricao: selecao }));
-        setTexto(`${selecao} `);
+        const selecao = payload.selecao.trim();
+        setDescricao(selecao);
+        setValores((v) => ({ ...v, titulo: tituloPadrao(n) }));
+        setTexto(`${tituloPadrao(n)} `);
+        requestAnimationFrame(() => {
+          entrada.current?.focus();
+          entrada.current?.select();
+        });
+      } else {
+        entrada.current?.focus();
       }
-      entrada.current?.focus();
       const link = await lerLinkDaAreaDeTransferencia();
       setLinkCopiado(link === ultimoLinkUsado.current ? null : link);
       const [nomes, opcoes] = await Promise.all([
@@ -134,6 +148,7 @@ export default function Captura() {
   function limpar() {
     setValores(FORMULARIO_VAZIO);
     setTexto("");
+    setDescricao("");
     setErro(null);
   }
 
@@ -142,23 +157,25 @@ export default function Captura() {
     setModo(novo);
     setErro(null);
     await gravarConfig("modo_captura", novo);
-    // Leva junto a descrição; as marcações não são convertidas.
-    if (novo === "avancado") setTexto(texto || valores.descricao);
-    else setValores((v) => ({ ...v, descricao: v.descricao || captura.titulo }));
+    // Leva junto o título; as marcações não são convertidas. A descrição é a mesma nos dois modos.
+    if (novo === "avancado") setTexto(texto || valores.titulo);
+    else setValores((v) => ({ ...v, titulo: v.titulo || captura.titulo }));
     requestAnimationFrame(() => entrada.current?.focus());
   }
 
   async function salvar() {
     if (salvando) return;
-    if (!captura.titulo) {
-      setErro("Escreva o que precisa ser feito.");
+    const titulo = resolverTitulo(captura.titulo, descricao, numero);
+    if (!titulo) {
+      setErro("Escreva um título ou uma descrição.");
       entrada.current?.focus();
       return;
     }
     setSalvando(true);
     try {
       const duracao = momentoAtalho.current ? Date.now() - momentoAtalho.current : null;
-      await criarItem(captura, duracao);
+      await criarItem({ ...captura, titulo: titulo.titulo }, duracao, descricao);
+      if (titulo.usouPadrao) await avancarNumeroAtividade(numero);
       if (captura.link === linkCopiado) ultimoLinkUsado.current = linkCopiado;
       await emit("item:criado");
       limpar();
@@ -176,6 +193,8 @@ export default function Captura() {
   // (sugestões, calendário) marcam o evento com preventDefault antes.
   function aoTeclar(e: React.KeyboardEvent) {
     if (e.defaultPrevented) return;
+    // Shift+Enter na descrição quebra a linha.
+    if (e.key === "Enter" && e.shiftKey && e.target instanceof HTMLTextAreaElement) return;
     if (e.key === "Enter") {
       e.preventDefault();
       salvar();
@@ -200,7 +219,13 @@ export default function Captura() {
           }}
           sugestoes={sugestoes}
           prioridades={prioridades}
-          refDescricao={entrada}
+          refTitulo={entrada}
+          tituloSugerido={tituloPadrao(numero)}
+          descricao={descricao}
+          aoMudarDescricao={(d) => {
+            setDescricao(d);
+            setErro(null);
+          }}
         />
       ) : (
         <Avancada
@@ -214,6 +239,17 @@ export default function Captura() {
           prioridades={prioridades}
           refEntrada={entrada}
         />
+      )}
+      {modo === "avancado" && (
+        <div className="mt-3">
+          <CampoDescricao
+            valor={descricao}
+            aoMudar={(d) => {
+              setDescricao(d);
+              setErro(null);
+            }}
+          />
+        </div>
       )}
 
       {captura.link && (

@@ -129,24 +129,33 @@ fn capturar_pelo_atalho(app: &AppHandle, estado: ShortcutState) {
 fn copiar_selecao(app: &AppHandle) -> Option<String> {
     let area = app.clipboard();
     let antes = area.read_text().ok();
+    // Esvazia antes de copiar: se a seleção for igual ao que já estava copiado,
+    // comparar com o texto anterior não perceberia a cópia.
+    let _ = area.write_text(String::new());
+    let mut copiado = None;
     if let Err(e) = enviar_copiar() {
         eprintln!("Não foi possível copiar a seleção: {e}");
-        return None;
-    }
-    let mut copiado = None;
-    for _ in 0..TENTATIVAS_COPIA {
-        thread::sleep(ESPERA_COPIA);
-        let agora = area.read_text().ok();
-        if agora.is_some() && agora != antes {
-            copiado = agora;
-            break;
+    } else {
+        for _ in 0..TENTATIVAS_COPIA {
+            thread::sleep(ESPERA_COPIA);
+            if let Ok(agora) = area.read_text() {
+                if !agora.is_empty() {
+                    copiado = Some(agora);
+                    break;
+                }
+            }
         }
     }
-    let copiado = copiado?;
-    if let Some(texto) = antes {
-        let _ = area.write_text(texto);
+    // Devolve o que a pessoa tinha copiado, tenha havido seleção ou não.
+    let _ = area.write_text(antes.unwrap_or_default());
+    // Vira a descrição: mantém as quebras de linha, sem espaços sobrando nem linhas vazias repetidas.
+    let mut linhas: Vec<String> = Vec::new();
+    for linha in copiado?.lines().map(|l| l.split_whitespace().collect::<Vec<_>>().join(" ")) {
+        if !(linha.is_empty() && linhas.last().is_some_and(|l| l.is_empty())) {
+            linhas.push(linha);
+        }
     }
-    let texto = copiado.split_whitespace().collect::<Vec<_>>().join(" ");
+    let texto = linhas.join("\n").trim().to_string();
     (!texto.is_empty()).then_some(texto)
 }
 

@@ -5,6 +5,7 @@ export function item(id: string, extra: Partial<Item> = {}): Item {
   return {
     id,
     titulo: id,
+    nota: null,
     status: "a_fazer",
     prioridade_id: null,
     prioridade: null,

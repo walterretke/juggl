@@ -9,6 +9,8 @@ export type Lista = "inbox" | "a_fazer";
 export interface Item {
   id: string;
   titulo: string;
+  /** Descrição livre (o texto selecionado na captura, por exemplo). */
+  nota: string | null;
   status: Status;
   prioridade_id: string | null;
   prioridade: string | null; // nome
@@ -38,7 +40,7 @@ export interface Item {
 
 /** Campos que a triagem pode mudar. */
 export type Mudancas = Partial<
-  Pick<Item, "titulo" | "status" | "prioridade_id" | "prazo" | "prometido_para" | "dia_planejado" | "pessoa_id" | "projeto_id">
+  Pick<Item, "titulo" | "nota" | "status" | "prioridade_id" | "prazo" | "prometido_para" | "dia_planejado" | "pessoa_id" | "projeto_id">
 >;
 
 /** O que é preciso para desfazer uma mudança: os valores anteriores e os eventos gravados. */
@@ -78,7 +80,7 @@ export async function buscarOuCriarProjeto(nome: string): Promise<string> {
 }
 
 /** Grava a captura na caixa de entrada e registra o evento `criado` com o tempo da captura. */
-export async function criarItem(captura: Captura, duracaoMs: number | null): Promise<string> {
+export async function criarItem(captura: Captura, duracaoMs: number | null, descricao: string | null = null): Promise<string> {
   const db = await getDb();
   const pessoaId = captura.pessoa ? await buscarOuCriarPessoa(captura.pessoa) : null;
   const projetoId = captura.projeto ? await buscarOuCriarProjeto(captura.projeto) : null;
@@ -86,8 +88,8 @@ export async function criarItem(captura: Captura, duracaoMs: number | null): Pro
   const agora = agoraIso();
 
   await db.execute(
-    `INSERT INTO item (id, titulo, status, prioridade_id, prazo, projeto_id, pessoa_id, link, origem, id_externo, criado_em, atualizado_em)
-     VALUES ($1, $2, 'inbox', $3, $4, $5, $6, $7, $8, $9, $10, $10)`,
+    `INSERT INTO item (id, titulo, nota, status, prioridade_id, prazo, projeto_id, pessoa_id, link, origem, id_externo, criado_em, atualizado_em)
+     VALUES ($1, $2, $11, 'inbox', $3, $4, $5, $6, $7, $8, $9, $10, $10)`,
     [
       id,
       captura.titulo,
@@ -99,6 +101,7 @@ export async function criarItem(captura: Captura, duracaoMs: number | null): Pro
       captura.origem,
       captura.idExterno,
       agora,
+      descricao?.trim() || null,
     ],
   );
   await db.execute("INSERT INTO evento (id, item_id, tipo, timestamp, dados) VALUES ($1, $2, 'criado', $3, $4)", [
@@ -129,7 +132,7 @@ const STATUS_DA_LISTA: Record<Lista, string> = {
 
 /** SELECT de itens com pessoa, projeto, nota da última pausa, tempo em foco e cobranças. */
 export const SELECT_ITEM = `
-  SELECT item.id, item.titulo, item.status, item.prioridade_id, prioridade.nome AS prioridade,
+  SELECT item.id, item.titulo, item.nota, item.status, item.prioridade_id, prioridade.nome AS prioridade,
          prioridade.cor AS prioridade_cor, item.prazo, item.prometido_para, item.dia_planejado,
          item.link, item.origem,
          item.id_externo, item.criado_em, item.atualizado_em, item.pessoa_id, item.projeto_id,
@@ -164,6 +167,7 @@ export async function contarPorLista(): Promise<Record<Lista, number>> {
 
 const CAMPOS_EDITAVEIS = [
   "titulo",
+  "nota",
   "status",
   "prioridade_id",
   "prazo",

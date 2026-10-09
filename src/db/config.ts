@@ -15,3 +15,15 @@ export async function gravarConfig(chave: string, valor: string): Promise<void> 
     [chave, valor],
   );
 }
+
+/** Contador do título sugerido "Atividade N" (começa em 1). */
+const CHAVE_NUMERO_ATIVIDADE = "proxima_atividade";
+
+export async function lerNumeroAtividade(): Promise<number> {
+  const salvo = Number(await lerConfig(CHAVE_NUMERO_ATIVIDADE));
+  return Number.isInteger(salvo) && salvo > 0 ? salvo : 1;
+}
+
+export async function avancarNumeroAtividade(usado: number): Promise<void> {
+  await gravarConfig(CHAVE_NUMERO_ATIVIDADE, String(usado + 1));
+}

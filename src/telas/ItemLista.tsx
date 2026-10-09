@@ -7,7 +7,7 @@ import Icone, { type NomeIcone } from "./Icone";
 import { COR_ORIGEM, NOME_ORIGEM } from "./origens";
 
 export type Menu = "prazo" | "prometido" | "prioridade";
-export type CampoEditavel = "prazo" | "projeto" | "pessoa" | "titulo";
+export type CampoEditavel = "prazo" | "projeto" | "pessoa" | "titulo" | "nota";
 
 export interface AcoesItem {
   selecionar: () => void;
@@ -168,7 +168,7 @@ export default function ItemLista({ item, indice, ativo, lista, agora, prioridad
               </button>
             )}
           </div>
-          <div className="mt-0.5 flex min-w-0 items-center gap-2 truncate text-[13px] text-suave">
+          <div className="mt-0.5 flex h-5 min-w-0 items-center gap-2 truncate text-[13px] text-suave">
             <span
               title={NOME_ORIGEM[item.origem] ?? item.origem}
               className={`size-2 shrink-0 rounded-full ${COR_ORIGEM[item.origem] ?? COR_ORIGEM.manual}`}
@@ -195,6 +195,19 @@ export default function ItemLista({ item, indice, ativo, lista, agora, prioridad
             <Campo texto={item.projeto} vazio="+ projeto" titulo="Projeto (#)" aoClicar={() => acoes.editar("projeto")} />
             {extras.length > 0 && <span className="truncate">{extras.join(" · ")}</span>}
           </div>
+          {item.nota && !children && (
+            <button
+              type="button"
+              title="Descrição: clique para editar (D)"
+              onClick={(e) => {
+                e.stopPropagation();
+                acoes.editar("nota");
+              }}
+              className="mt-1 block w-full truncate rounded text-left text-[13px] text-apagado hover:text-tinta-2"
+            >
+              {item.nota.replace(/\s+/g, " ")}
+            </button>
+          )}
         </div>
 
         {/* Ações: aparecem ao passar o mouse ou no item selecionado. */}
@@ -207,6 +220,7 @@ export default function ItemLista({ item, indice, ativo, lista, agora, prioridad
           <Acao icone="foco" titulo={item.status === "pausado" ? "Retomar o foco (F)" : "Focar agora (F)"} aoClicar={acoes.focar} />
           {!item.prioridade && <Acao icone="bandeira" titulo="Prioridade" aoClicar={() => acoes.abrirMenu("prioridade")} />}
           {!item.prazo && <Acao icone="calendario" titulo="Prazo e promessa (P, M)" aoClicar={() => acoes.abrirMenu("prazo")} />}
+          {!item.nota && <Acao icone="texto" titulo="Descrição (D)" aoClicar={() => acoes.editar("nota")} />}
           <Acao icone="cobrar" titulo="Cobrou de novo (B)" aoClicar={acoes.cobrar} />
           {item.link && <Acao icone="link" titulo="Abrir o link (O)" aoClicar={acoes.abrirLink} />}
           <Acao icone="arquivar" titulo="Arquivar (E)" aoClicar={acoes.arquivar} />

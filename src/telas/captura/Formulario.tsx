@@ -4,9 +4,10 @@ import type { Prioridade } from "../../db/prioridades";
 import { ETIQUETA_PRIORIDADE } from "../cores";
 import Autocompletar from "./Autocompletar";
 import Calendario from "./Calendario";
+import CampoDescricao from "./CampoDescricao";
 
 export interface ValoresFormulario {
-  descricao: string;
+  titulo: string;
   pessoa: string;
   projeto: string;
   prioridadeId: string | null;
@@ -14,7 +15,7 @@ export interface ValoresFormulario {
 }
 
 export const FORMULARIO_VAZIO: ValoresFormulario = {
-  descricao: "",
+  titulo: "",
   pessoa: "",
   projeto: "",
   prioridadeId: null,
@@ -26,7 +27,11 @@ interface Props {
   aoMudar: (mudancas: Partial<ValoresFormulario>) => void;
   sugestoes: { pessoas: string[]; projetos: string[] };
   prioridades: Prioridade[];
-  refDescricao: React.Ref<HTMLInputElement>;
+  refTitulo: React.Ref<HTMLInputElement>;
+  /** Título usado se o campo ficar vazio ("Atividade N"). */
+  tituloSugerido: string;
+  descricao: string;
+  aoMudarDescricao: (descricao: string) => void;
 }
 
 function amanha(): string {
@@ -91,8 +96,17 @@ function Opcoes<T>({
   );
 }
 
-/** Captura padrão: descrição e campos para escolher, sem precisar lembrar marcações. */
-export default function Formulario({ valores, aoMudar, sugestoes, prioridades, refDescricao }: Props) {
+/** Captura padrão: título, descrição e campos para escolher, sem precisar lembrar marcações. */
+export default function Formulario({
+  valores,
+  aoMudar,
+  sugestoes,
+  prioridades,
+  refTitulo,
+  tituloSugerido,
+  descricao,
+  aoMudarDescricao,
+}: Props) {
   const [calendario, setCalendario] = useState(false);
   const grupoPrazo = useRef<HTMLDivElement>(null);
 
@@ -107,20 +121,22 @@ export default function Formulario({ valores, aoMudar, sugestoes, prioridades, r
   return (
     <div className="flex flex-col gap-3.5">
       <div>
-        <label htmlFor="captura-descricao" className="block text-xs font-semibold uppercase tracking-wider text-apagado">
+        <label htmlFor="captura-titulo" className="block text-xs font-semibold uppercase tracking-wider text-apagado">
           O que chegou?
         </label>
         <input
-          id="captura-descricao"
-          ref={refDescricao}
+          id="captura-titulo"
+          ref={refTitulo}
           autoFocus
-          value={valores.descricao}
-          onChange={(e) => aoMudar({ descricao: e.target.value })}
-          placeholder="Descreva o pedido"
+          value={valores.titulo}
+          onChange={(e) => aoMudar({ titulo: e.target.value })}
+          placeholder={`Título (vazio fica "${tituloSugerido}")`}
           spellCheck={false}
           className="mt-1 h-10 w-full bg-transparent text-xl caret-destaque outline-none placeholder:text-apagado"
         />
       </div>
+
+      <CampoDescricao valor={descricao} aoMudar={aoMudarDescricao} />
 
       <div className="flex gap-3">
         <Autocompletar

@@ -73,6 +73,7 @@ const ROTULO_CAMPO: Record<CampoEditavel, string> = {
   projeto: "Projeto (vazio tira)",
   pessoa: "Quem pediu (vazio tira)",
   titulo: "Título",
+  nota: "Descrição (Enter salva, Shift+Enter quebra a linha, vazio tira)",
 };
 
 
@@ -86,12 +87,14 @@ function valorAtual(item: Item, campo: CampoEditavel): string {
   if (campo === "prazo") return item.prazo ? item.prazo.split("-").reverse().slice(0, 2).join("/") : "";
   if (campo === "projeto") return item.projeto ?? "";
   if (campo === "pessoa") return item.pessoa ?? "";
+  if (campo === "nota") return item.nota ?? "";
   return item.titulo;
 }
 
 /** Converte o texto digitado na edição em mudanças no item, ou devolve uma mensagem de erro. */
 async function mudancasDaEdicao(campo: CampoEditavel, texto: string): Promise<Mudancas | string> {
   const valor = texto.trim();
+  if (campo === "nota") return { nota: valor || null };
   if (campo === "titulo") return valor ? { titulo: valor } : "O título não pode ficar vazio.";
   if (campo === "prazo") {
     if (!valor) return { prazo: null };
@@ -368,6 +371,8 @@ export default function Principal() {
       return;
     }
     setEdicao(null);
+    // Nada mudou (ou o Enter e o clique fora confirmaram a mesma edição): não grava de novo.
+    if (Object.entries(resultado).every(([campo, valor]) => item[campo as keyof Item] === valor)) return;
     await aplicar(item, resultado);
   }
 
@@ -414,6 +419,7 @@ export default function Principal() {
           "#": () => iniciarEdicao("projeto", item),
           "@": () => iniciarEdicao("pessoa", item),
           r: () => iniciarEdicao("titulo", item),
+          d: () => iniciarEdicao("nota", item),
           b: () => cobrar(item),
           m: () => setMenu("prometido"),
           o: () => item.link && openUrl(item.link),
@@ -694,6 +700,7 @@ export default function Principal() {
               aoConcluir={concluirFoco}
               aoCobrar={() => foco && cobrar(foco.item)}
               aoAbrirRitual={() => trocarLista("ritual")}
+              aoMudarNota={(nota) => foco && aplicar(foco.item, { nota }, nota ? "Descrição salva" : "Descrição removida")}
             />
           )}
 
@@ -721,6 +728,27 @@ export default function Principal() {
                     <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-apagado">
                       {ROTULO_CAMPO[edicao.campo]}
                     </label>
+                    {edicao.campo === "nota" ? (
+                      <textarea
+                        autoFocus
+                        rows={Math.min(Math.max(edicao.valor.split("\n").length, 3), 10)}
+                        value={edicao.valor}
+                        onChange={(e) => setEdicao({ ...edicao, valor: e.target.value, erro: null })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            setEdicao(null);
+                          } else if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            confirmarEdicao(item);
+                          }
+                        }}
+                        // Clicar fora guarda o texto: descrição é longa demais para perder.
+                        onBlur={() => confirmarEdicao(item)}
+                        placeholder="Detalhes, a mensagem recebida, links..."
+                        className="w-full resize-y rounded-lg border border-linha bg-folha px-3 py-1.5 text-sm leading-5 outline-none focus:border-destaque"
+                      />
+                    ) : (
                     <input
                       autoFocus
                       onFocus={(e) => e.target.select()}
@@ -736,6 +764,7 @@ export default function Principal() {
                       onBlur={() => setEdicao(null)}
                       className="w-full rounded-lg border border-linha bg-folha px-3 py-1.5 text-[15px] outline-none focus:border-destaque"
                     />
+                    )}
                     <datalist id="sugestoes-edicao">
                       {sugestoesEdicao.map((s) => (
                         <option key={s} value={s} />
@@ -795,6 +824,7 @@ export default function Principal() {
                 <Dica teclas="X">concluir</Dica>
                 <Dica teclas="1 2 3">focar uma das próximas</Dica>
                 <Dica teclas="B">cobrou de novo</Dica>
+                <Dica teclas="D">descrição</Dica>
                 <Dica teclas="O">abrir link</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
               </>
@@ -806,6 +836,7 @@ export default function Principal() {
                 <Dica teclas={prioridades.length > 1 ? `1–${Math.min(prioridades.length, 9)}` : "1"}>prioridade</Dica>
                 <Dica teclas="#">projeto</Dica>
                 <Dica teclas="@">quem pediu</Dica>
+                <Dica teclas="D">descrição</Dica>
                 <Dica teclas="M">prometi para</Dica>
                 <Dica teclas="B">cobrou de novo</Dica>
                 <Dica teclas="X">concluir</Dica>
