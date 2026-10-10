@@ -37,6 +37,7 @@ import { notificar } from "../regras/notificar";
 import type { Urgencia } from "../regras/urgencia";
 import { adiarAlertas, continuarApesarDoAlerta, pontuacoesAgora, verificarPrioridade, type AlertaComFoco } from "../db/detector";
 import AlertaPrioridade from "./AlertaPrioridade";
+import { horaDeSincronizar, lerConfigDevops, sincronizarDevops } from "../db/devops";
 import Agora from "./Agora";
 import Configuracoes from "./Configuracoes";
 import Horas from "./Horas";
@@ -140,6 +141,9 @@ export default function Principal() {
   const [ritualFeito, setRitualFeito] = useState(true);
   const [lembreteRitual, setLembreteRitual] = useState(false);
   const [alerta, setAlerta] = useState<AlertaComFoco | null>(null);
+  /** Azure DevOps configurado: mostra o botão de sincronizar na caixa de entrada. */
+  const [devopsAtivo, setDevopsAtivo] = useState(false);
+  const [sincronizando, setSincronizando] = useState(false);
   /** Pontuação de cada item quando o foco atual começou, para ver quem passou à frente. */
   const pontosDoInicio = useRef<Map<string, Urgencia> | null>(null);
   const desfazer = useRef<Alteracao[]>([]);
@@ -157,6 +161,9 @@ export default function Principal() {
         ritualFeitoHoje(),
       ]);
       setRitualFeito(feito);
+      lerConfigDevops()
+        .then((cfg) => setDevopsAtivo(cfg.ligado && !!cfg.organizacao))
+        .catch(() => {});
       setPrioridades(opcoes);
       const lidos = !ehLista(lista) ? [] : lista === "a_fazer" ? aFazer : await listarItens(lista);
       setFoco(emFoco);
@@ -223,6 +230,11 @@ export default function Principal() {
           if (marcados > 0) return carregarAtual.current();
         })
         .catch((e) => console.error("Regras:", e));
+      lerConfigDevops()
+        .then(async (cfg) => {
+          if (await horaDeSincronizar(cfg)) await sincronizarAzure.current(false);
+        })
+        .catch((e) => console.error("Azure DevOps:", e));
       if (focoAtual.current) {
         verificarPrioridade(pontosDoInicio.current)
           .then((a) => a && mostrarAlerta(a))
@@ -362,6 +374,37 @@ export default function Principal() {
     await carregar();
   }
 
+  /**
+   * Traz os work items novos do Azure DevOps. Manual (S ou o botão): sempre diz o resultado.
+   * Automática: avisa só quando chega algo ou quando aparece um erro novo.
+   */
+  async function sincronizarAzureAgora(manual: boolean) {
+    setSincronizando(true);
+    try {
+      const novos = await sincronizarDevops();
+      erroAzure.current = null;
+      if (novos.length > 0) {
+        const texto =
+          novos.length === 1 ? `Do Azure DevOps: ${novos[0]}` : `${novos.length} itens novos do Azure DevOps na caixa de entrada.`;
+        mostrarAviso(texto);
+        if (!document.hasFocus()) notificar("Azure DevOps", texto).catch(() => {});
+        await carregar();
+      } else if (manual) {
+        mostrarAviso("Azure DevOps: nada novo atribuído a você.");
+      }
+    } catch (e) {
+      const texto = String(e).replace(/^Error: /, "");
+      if (manual || erroAzure.current !== texto) mostrarAviso(`Azure DevOps: ${texto}`);
+      erroAzure.current = texto;
+      if (manual) throw e;
+    } finally {
+      setSincronizando(false);
+    }
+  }
+  const sincronizarAzure = useRef(sincronizarAzureAgora);
+  sincronizarAzure.current = sincronizarAzureAgora;
+  const erroAzure = useRef<string | null>(null);
+
   /** Mostra o alerta de prioridade errada; com a janela escondida, também como notificação. */
   function mostrarAlerta(a: AlertaComFoco) {
     setAlerta(a);
@@ -484,6 +527,10 @@ export default function Principal() {
         c: () => invoke("abrir_captura"),
         ",": () => setConfigAberta(true),
         z: () => desfazerUltima(),
+        s: () =>
+          lerConfigDevops().then((cfg) =>
+            cfg.organizacao ? sincronizarAzureAgora(true).catch(() => {}) : mostrarAviso("Configure o Azure DevOps em Configurações (,)."),
+          ),
       };
       acoes.j = acoes.ArrowDown;
       acoes.k = acoes.ArrowUp;
@@ -755,6 +802,20 @@ export default function Principal() {
             />
           )}
 
+          {lista === "inbox" && devopsAtivo && (
+            <div className="-mt-4 mb-4 flex justify-end">
+              <button
+                type="button"
+                disabled={sincronizando}
+                onClick={() => sincronizarAzureAgora(true).catch(() => {})}
+                className="rounded-lg px-3 py-1.5 text-sm text-suave hover:bg-etiqueta hover:text-tinta disabled:opacity-50"
+              >
+                {sincronizando ? "Buscando no Azure DevOps…" : "Buscar no Azure DevOps"}{" "}
+                <kbd className="ml-1 font-sans text-apagado">S</kbd>
+              </button>
+            </div>
+          )}
+
           {itens?.length === 0 && lista === "inbox" && (
             <p className="mt-16 text-center text-[15px] text-apagado">
               Aperte {rotuloAtalho(atalho)} em qualquer janela para capturar um pedido.
@@ -944,6 +1005,7 @@ export default function Principal() {
             ) : (
               <>
                 {lista === "inbox" && <Dica teclas="Enter">mover para A fazer</Dica>}
+                {lista === "inbox" && devopsAtivo && <Dica teclas="S">Azure DevOps</Dica>}
                 <Dica teclas="F">focar</Dica>
                 <Dica teclas="P">prazo</Dica>
                 <Dica teclas={prioridades.length > 1 ? `1–${Math.min(prioridades.length, 9)}` : "1"}>prioridade</Dica>
@@ -974,7 +1036,15 @@ export default function Principal() {
       )}
 
       {configAberta && (
-        <Configuracoes atalho={atalho} aoMudarAtalho={setAtalho} aoFechar={() => setConfigAberta(false)} />
+        <Configuracoes
+          atalho={atalho}
+          aoMudarAtalho={setAtalho}
+          aoSincronizarDevops={() => sincronizarAzureAgora(true)}
+          aoFechar={() => {
+            setConfigAberta(false);
+            carregar();
+          }}
+        />
       )}
     </div>
   );

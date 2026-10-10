@@ -94,6 +94,14 @@ Pelo teclado:
 - Três respostas, com clique ou tecla: **Trocar agora** (`T`), **Continuar** (`C`, fica registrado; só avisa de novo se algum item ficar mais urgente) e **Adiar 30 min** (`A`). "Por quê?" mostra a conta dos dois itens.
 - Nunca mais de uma vez por hora para o mesmo par. Liga e desliga na tela Regras (`P`).
 
+## Azure DevOps
+
+- Em Configurações (`,`), seção **Azure DevOps**: marque "Trazer os work items atribuídos a mim", informe a organização (o nome ou o endereço colado do navegador) e, se quiser, um projeto só.
+- O token pessoal (PAT) vai para o cofre do sistema (Credential Manager no Windows), nunca para o banco. Crie em **User settings › Personal access tokens** com o escopo **Work Items: Read** e nada mais.
+- A cada 10 minutos (ajustável) o Juggl busca os work items abertos atribuídos a você e põe os novos na caixa de entrada, com quem criou, projeto, prazo (Due Date ou Target Date), link e descrição. É só leitura: nada muda no Azure.
+- Um work item que já entrou nunca volta, mesmo que você arquive ou conclua no Juggl.
+- `S` (ou "Buscar no Azure DevOps" na caixa de entrada, ou "Sincronizar agora" nas configurações) busca na hora. **Testar conexão** confere organização e token sem gravar nada.
+
 ## Horas da semana
 
 - A tela **Horas da semana** soma o tempo em foco por projeto e por dia (segunda a domingo), com `‹` `›` (ou as setas `←` `→`) para trocar de semana. Clicar num projeto mostra os itens.

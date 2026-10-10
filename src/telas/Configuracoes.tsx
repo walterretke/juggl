@@ -5,6 +5,7 @@ import { backupAgora, listarBackups } from "../db/backup";
 import { gravarConfig, lerConfig } from "../db/config";
 import { atalhoDoEvento } from "./atalho";
 import EditorPrioridades from "./EditorPrioridades";
+import SecaoDevops from "./SecaoDevops";
 import { CHAVE_INATIVIDADE, lerLimiteInatividade } from "../db/foco";
 import { rotuloAtalho } from "./origens";
 import { escolherTema, lerTema, NOME_TEMA, type Tema } from "../tema";
@@ -12,10 +13,11 @@ import { escolherTema, lerTema, NOME_TEMA, type Tema } from "../tema";
 interface Props {
   atalho: string;
   aoMudarAtalho: (atalho: string) => void;
+  aoSincronizarDevops: () => Promise<void>;
   aoFechar: () => void;
 }
 
-export default function Configuracoes({ atalho, aoMudarAtalho, aoFechar }: Props) {
+export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevops, aoFechar }: Props) {
   const [gravando, setGravando] = useState(false);
   const [novoAtalho, setNovoAtalho] = useState<string | null>(null);
   const [mensagemAtalho, setMensagemAtalho] = useState<{ ok: boolean; texto: string } | null>(null);
@@ -187,6 +189,9 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoFechar }: Props
           O tempo parado não entra nas horas. Use 0 para desligar. No Linux com Wayland o sistema não informa a
           inatividade.
         </p>
+
+        <h3 className="mt-7 text-[15px] font-semibold">Azure DevOps</h3>
+        <SecaoDevops aoSincronizar={aoSincronizarDevops} />
 
         <h3 className="mt-7 text-[15px] font-semibold">Prioridades</h3>
         <EditorPrioridades />

@@ -28,6 +28,11 @@ tauri-plugin-clipboard-manager = "2"
 tauri-plugin-single-instance = "2"
 enigo = "0.6.1"
 tauri-plugin-notification = "2"
+# Azure DevOps (src/devops.rs): HTTP com o TLS do sistema (aceita o certificado da empresa)
+# e o token no cofre do sistema (Credential Manager, Keychain ou Secret Service).
+reqwest = { version = "0.13", default-features = false, features = ["native-tls", "json", "system-proxy", "charset", "http2"] }
+base64 = "0.22"
+keyring = { version = "3.6", features = ["windows-native", "apple-native", "sync-secret-service", "crypto-rust"] }
 
 
 # Tempo sem usar o computador, para pausar o foco sozinho (src/ocioso.rs).

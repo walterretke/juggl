@@ -1,3 +1,4 @@
+mod devops;
 mod ocioso;
 
 use std::fs;
@@ -426,7 +427,11 @@ pub fn run() {
             atualizar_bandeja,
             definir_usar_selecao,
             tempo_ocioso,
-            salvar_csv
+            salvar_csv,
+            devops::devops_salvar_token,
+            devops::devops_apagar_token,
+            devops::devops_tem_token,
+            devops::devops_buscar
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
