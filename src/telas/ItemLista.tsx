@@ -120,7 +120,7 @@ export default function ItemLista({ item, indice, ativo, lista, agora, prioridad
         ativo ? "bg-cartao shadow-[0_0_0_1.5px_var(--color-destaque),0_4px_14px_rgba(0,0,0,0.08)]" : "hover:bg-cartao/60"
       }`}
     >
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <button
           type="button"
           title="Concluir (X)"
@@ -210,8 +210,15 @@ export default function ItemLista({ item, indice, ativo, lista, agora, prioridad
           )}
         </div>
 
-        {/* Ações: aparecem ao passar o mouse ou no item selecionado. */}
-        <div className={`flex shrink-0 items-center ${ativo ? "" : "opacity-0 group-hover:opacity-100"}`}>
+        {/* Ações: aparecem ao passar o mouse ou no item selecionado. Em janela estreita, só no
+            selecionado e numa linha embaixo, para não espremer o título. */}
+        <div
+          className={`shrink-0 items-center ${
+            ativo
+              ? "order-last flex basis-full pl-9 lg:order-none lg:basis-auto lg:pl-0"
+              : "hidden opacity-0 group-hover:opacity-100 lg:flex"
+          }`}
+        >
           {lista === "inbox" ? (
             <Acao icone="seta" titulo="Mover para A fazer (Enter)" aoClicar={() => acoes.mover("a_fazer")} />
           ) : (

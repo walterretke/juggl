@@ -725,7 +725,7 @@ export default function Principal() {
       type="button"
       onClick={() => invoke("abrir_captura")}
       title={`Abre a mesma janela do atalho global (${rotuloAtalho(atalho)})`}
-      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-suave hover:bg-folha hover:text-tinta"
+      className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm text-suave hover:bg-folha hover:text-tinta"
     >
       <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true" className="shrink-0">
         <path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
@@ -742,7 +742,7 @@ export default function Principal() {
       type="button"
       onClick={() => trocarLista(l)}
       {...alvoDeArrasto(l)}
-      className={`flex items-center justify-between rounded-lg px-3 py-2 text-[15px] ${
+      className={`flex shrink-0 items-center justify-between rounded-lg px-3 py-1.5 text-[15px] ${
         alvoArrasto === l
           ? "bg-destaque-claro text-destaque-tinta ring-2 ring-destaque"
           : lista === l
@@ -762,11 +762,12 @@ export default function Principal() {
   );
 
   return (
-    <div className="flex h-screen bg-folha text-tinta select-none">
-      <nav aria-label="Listas" className="hidden w-56 shrink-0 flex-col gap-1 bg-lateral px-4 py-7 md:flex">
-        <div className="px-3 pb-6 font-titulo text-[22px] font-semibold tracking-tight">Juggl</div>
+    <div className="flex h-screen overflow-hidden bg-folha text-tinta select-none">
+      {/* A barra lateral rola sozinha em janelas baixas, sem fazer a página inteira rolar junto. */}
+      <nav aria-label="Listas" className="hidden w-56 shrink-0 flex-col gap-1 overflow-y-auto bg-lateral px-4 py-6 md:flex">
+        <div className="px-3 pb-4 font-titulo text-[22px] font-semibold tracking-tight">Juggl</div>
         {GRUPOS_MENU.map((grupo) => (
-          <div key={grupo.titulo} className="mb-4 flex flex-col gap-0.5">
+          <div key={grupo.titulo} className="mb-3 flex shrink-0 flex-col gap-0.5">
             <h3 className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-apagado">{grupo.titulo}</h3>
             {grupo.telas.map(botaoTela)}
           </div>
@@ -789,7 +790,7 @@ export default function Principal() {
           type="button"
           onClick={() => setAnotando(true)}
           title="Anotar algo que atrapalhou, para corrigir depois"
-          className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-suave hover:bg-folha hover:text-tinta"
+          className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm text-suave hover:bg-folha hover:text-tinta"
         >
           Anotar o que irrita <kbd className="font-sans text-xs text-apagado">!</kbd>
         </button>
@@ -797,22 +798,22 @@ export default function Principal() {
         <button
           type="button"
           onClick={() => setConfigAberta(true)}
-          className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-suave hover:bg-folha hover:text-tinta"
+          className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm text-suave hover:bg-folha hover:text-tinta"
         >
           Configurações <kbd className="font-sans text-xs text-apagado">,</kbd>
         </button>
       </nav>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/* Janela estreita: as listas viram abas no topo. */}
-        <nav aria-label="Listas" className="flex items-center gap-1 border-b border-linha px-4 py-2 md:hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {/* Janela estreita: as listas viram abas no topo, que rolam na horizontal se não couberem. */}
+        <nav aria-label="Listas" className="flex shrink-0 items-center gap-1 overflow-x-auto whitespace-nowrap border-b border-linha px-4 py-2 md:hidden">
           {TELAS.map((l) => (
             <button
               key={l}
               type="button"
               onClick={() => trocarLista(l)}
               {...alvoDeArrasto(l)}
-              className={`rounded-full px-3 py-1 text-sm ${
+              className={`shrink-0 rounded-full px-3 py-1 text-sm ${
                 alvoArrasto === l ? "bg-destaque-claro text-destaque-tinta" : lista === l ? "bg-etiqueta font-semibold" : "text-suave"
               }`}
             >
@@ -823,7 +824,7 @@ export default function Principal() {
           <button
             type="button"
             onClick={() => setConfigAberta(true)}
-            className="ml-auto px-2 text-sm text-suave hover:text-tinta"
+            className="ml-auto shrink-0 px-2 text-sm text-suave hover:text-tinta"
           >
             Configurações
           </button>
@@ -1051,7 +1052,7 @@ export default function Principal() {
           </ul>
         </main>
 
-        <footer className="flex flex-wrap items-center gap-x-5 gap-y-1 px-6 py-4 text-[13px] text-apagado md:px-14">
+        <footer className={`${aviso ? "flex" : "hidden md:flex"} shrink-0 flex-wrap items-center gap-x-5 gap-y-1 px-6 py-4 text-[13px] text-apagado md:px-14`}>
           {aviso ? (
             <span className="flex items-center gap-3 font-semibold text-tinta">
               {aviso.texto}
