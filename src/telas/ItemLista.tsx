@@ -147,7 +147,7 @@ export default function ItemLista({ item, indice, ativo, lista, agora, prioridad
               {item.titulo}
             </span>
             {item.dia_planejado === hoje && (
-              <span title="Escolhido no ritual da manhã" className="shrink-0 rounded-full bg-destaque-claro px-2 text-xs font-semibold text-destaque-tinta">
+              <span title="Escolhido para hoje em Meu dia" className="shrink-0 rounded-full bg-destaque-claro px-2 text-xs font-semibold text-destaque-tinta">
                 Do dia
               </span>
             )}

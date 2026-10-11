@@ -22,6 +22,8 @@
   --color-destaque-tinta: #2f52a8;
   --color-atraso: #b04a2f;
   --color-atraso-claro: #fbeee9;
+  --color-ok: #2f7d4f;
+  --color-ok-claro: #e8f3ec;
 }
 
 /* Tema escuro: pelo sistema, a menos que o usuário tenha escolhido claro,
@@ -43,6 +45,8 @@
     --color-destaque-tinta: #a9bdf5;
     --color-atraso: #f08a6c;
     --color-atraso-claro: #3a2621;
+    --color-ok: #7cc79a;
+    --color-ok-claro: #1f3027;
   }
 }
 
@@ -62,6 +66,8 @@
   --color-destaque-tinta: #a9bdf5;
   --color-atraso: #f08a6c;
   --color-atraso-claro: #3a2621;
+  --color-ok: #7cc79a;
+  --color-ok-claro: #1f3027;
 }
 
 /* `dark:` do Tailwind segue a mesma regra do tema acima. */

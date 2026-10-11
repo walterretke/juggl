@@ -2,30 +2,35 @@ import { useEffect, useState } from "react";
 import { dataLocalIso, descreverPrazo, formatarCronometro, formatarDuracao } from "../captura/datas";
 import type { Foco } from "../db/foco";
 import type { Item } from "../db/itens";
+import { NOME_QUANDO } from "../ritual/quadro";
 import { COR_ORIGEM, NOME_ORIGEM } from "./origens";
 
 interface Props {
   foco: Foco | null;
   proximas: Item[];
-  ritualFeito: boolean;
+  /** O dia já foi planejado (itens escolhidos ou plano confirmado). */
+  planejado: boolean;
+  /** As próximas são as escolhidas para hoje (senão são só sugestões de A fazer). */
+  doDia: boolean;
   aoFocar: (item: Item) => void;
   aoPausar: () => void;
   aoConcluir: () => void;
   aoCobrar: () => void;
-  aoAbrirRitual: () => void;
+  aoPlanejar: () => void;
   aoMudarNota: (nota: string | null) => void;
 }
 
-/** Tela "Agora": uma única coisa em destaque, o timer e as próximas três. */
+/** Tela "Agora": uma única coisa em destaque, o timer e as 3 de hoje (ou sugestões, sem plano). */
 export default function Agora({
   foco,
   proximas,
-  ritualFeito,
+  planejado,
+  doDia,
   aoFocar,
   aoPausar,
   aoConcluir,
   aoCobrar,
-  aoAbrirRitual,
+  aoPlanejar,
   aoMudarNota,
 }: Props) {
   const [agora, setAgora] = useState(() => Date.now());
@@ -152,19 +157,26 @@ export default function Agora({
           <p className="mt-1 text-[15px] text-suave">
             Escolha uma das próximas com 1, 2 ou 3, ou aperte F em qualquer item de A fazer.
           </p>
-          {!ritualFeito && (
+          {!planejado && (
             <button
               type="button"
-              onClick={aoAbrirRitual}
+              onClick={aoPlanejar}
               className="mt-4 rounded-lg border border-linha px-4 py-2 text-sm font-semibold hover:bg-etiqueta"
             >
-              Fazer o ritual da manhã
+              Planejar o dia
             </button>
           )}
         </section>
       )}
 
-      <h2 className="mt-9 mb-3 text-xs font-semibold uppercase tracking-wider text-apagado">Próximas</h2>
+      <div className="mt-9 mb-3 flex items-baseline gap-3">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-apagado">{doDia ? "Suas 3 de hoje" : "Sugestões"}</h2>
+        {!doDia && proximas.length > 0 && (
+          <button type="button" onClick={aoPlanejar} className="text-[13px] font-semibold text-destaque hover:underline">
+            Planejar o dia
+          </button>
+        )}
+      </div>
       {proximas.length === 0 && <p className="text-[15px] text-apagado">A fazer está vazio.</p>}
       <ol className="flex flex-col gap-1.5">
         {proximas.map((item, i) => (
@@ -183,7 +195,9 @@ export default function Agora({
                 {item.nota_pausa && <span className="block truncate text-[13px] text-suave">Parou em: {item.nota_pausa}</span>}
               </span>
               {item.dia_planejado === hoje && (
-                <span className="shrink-0 rounded-full bg-destaque-claro px-2 text-xs font-semibold text-destaque-tinta">Do dia</span>
+                <span className="shrink-0 rounded-full bg-destaque-claro px-2 text-xs font-semibold text-destaque-tinta">
+                  {item.quando ? NOME_QUANDO[item.quando] : "Do dia"}
+                </span>
               )}
               {item.status === "pausado" && (
                 <span className="shrink-0 rounded-full bg-etiqueta px-2 text-xs font-semibold text-tinta-2">Pausado</span>

@@ -1,22 +1,22 @@
 import { getDb } from ".";
 import { dataLocalIso } from "../captura/datas";
 import { gravarConfig, lerConfig } from "./config";
-import { SELECT_ITEM, type Item } from "./itens";
+import { alterarItem, gravarCampos, SELECT_ITEM, type Item } from "./itens";
 
-/** Quantas prioridades o ritual escolhe por dia. */
+/** Quantos itens cabem em Hoje (as 3 do dia). */
 export const MAX_DO_DIA = 3;
-/** Hora a partir da qual o app lembra do ritual que não foi feito. */
+/** Hora a partir da qual o app lembra que o dia não foi planejado. */
 export const HORA_LEMBRETE_RITUAL = 10;
 
-/** Último dia (AAAA-MM-DD) em que o ritual foi feito. */
+/** Último dia (AAAA-MM-DD) em que o dia foi planejado (a chave mantém o nome antigo). */
 const CHAVE_FEITO = "ritual_feito";
-/** Último dia em que o ritual abriu sozinho, para não abrir de novo no mesmo dia. */
+/** Último dia em que Meu dia abriu sozinho, para não abrir de novo no mesmo dia. */
 const CHAVE_ABERTO = "ritual_aberto";
-/** Último dia em que o app lembrou do ritual pendente (lembra uma vez só). */
+/** Último dia em que o app lembrou do plano pendente (lembra uma vez só). */
 const CHAVE_LEMBRADO = "ritual_lembrado";
 
-/** Tudo que pode entrar no dia: A fazer, pausados e a caixa de entrada. */
-export async function candidatosDoRitual(): Promise<Item[]> {
+/** Tudo que aparece no quadro Meu dia: caixa de entrada, A fazer, pausados e o item em foco. */
+export async function itensDoQuadro(): Promise<Item[]> {
   const db = await getDb();
   return db.select<Item[]>(
     `${SELECT_ITEM} WHERE item.status IN ('inbox', 'a_fazer', 'pausado', 'em_foco')
@@ -24,26 +24,25 @@ export async function candidatosDoRitual(): Promise<Item[]> {
   );
 }
 
+/** Itens concluídos hoje, o mais recente primeiro. */
+export async function concluidosDoDia(hoje = new Date()): Promise<Item[]> {
+  const db = await getDb();
+  const meiaNoite = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
+  return db.select<Item[]>(
+    `${SELECT_ITEM} WHERE item.status = 'feito'
+       AND EXISTS (SELECT 1 FROM evento e WHERE e.item_id = item.id AND e.tipo = 'concluido' AND e.timestamp >= $1)
+     ORDER BY (SELECT MAX(e.timestamp) FROM evento e WHERE e.item_id = item.id AND e.tipo = 'concluido') DESC`,
+    [meiaNoite],
+  );
+}
+
 /**
- * Grava as escolhas do dia: marca `dia_planejado` nos escolhidos, tira dos que tinham sido
- * escolhidos hoje e saíram, e leva para A fazer o que ainda estava na caixa de entrada.
+ * O dia foi planejado: conta para o lembrete das 10h, para a regra "Dia não planejado"
+ * e para o critério da tela Uso. Chamado ao pôr um item em Hoje ou ao confirmar o plano.
  */
-export async function salvarRitual(escolhidos: string[], hoje = new Date()): Promise<void> {
+export async function marcarDiaPlanejado(hoje = new Date()): Promise<void> {
   const db = await getDb();
   const dia = dataLocalIso(hoje);
-  // Escolher no ritual não conta como mexer no item: `atualizado_em` (o "parado há") fica igual.
-  await db.execute(
-    "UPDATE item SET dia_planejado = NULL WHERE dia_planejado = $1 AND id NOT IN (SELECT value FROM json_each($2))",
-    [dia, JSON.stringify(escolhidos)],
-  );
-  for (const id of escolhidos) {
-    await db.execute(
-      `UPDATE item SET dia_planejado = $1,
-              status = CASE WHEN status = 'inbox' THEN 'a_fazer' ELSE status END
-        WHERE id = $2`,
-      [dia, id],
-    );
-  }
   await gravarConfig(CHAVE_FEITO, dia);
   await db.execute(
     `INSERT INTO dia_de_uso (dia, aberto_em, ritual) VALUES ($1, $2, 1)
@@ -52,11 +51,35 @@ export async function salvarRitual(escolhidos: string[], hoje = new Date()): Pro
   );
 }
 
+/** Último dia (AAAA-MM-DD) em que o dia foi fechado. */
+const CHAVE_FECHADO = "dia_fechado";
+
+export async function diaFechadoHoje(hoje = new Date()): Promise<boolean> {
+  return (await lerConfig(CHAVE_FECHADO)) === dataLocalIso(hoje);
+}
+
+/** Destino de um item que sobrou em Hoje ao fechar o dia. */
+export type Destino = "amanha" | "depois" | "feito";
+
+/**
+ * Fecha o dia: o que vai para amanhã já fica escolhido para amanhã (mantendo o "quando"),
+ * o que vai para depois sai do plano e o que foi concluído vira feito.
+ */
+export async function fecharDia(destinos: { item: Item; destino: Destino }[], hoje = new Date()): Promise<void> {
+  const amanha = dataLocalIso(new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + 1));
+  for (const { item, destino } of destinos) {
+    if (destino === "amanha") await gravarCampos(item.id, { dia_planejado: amanha });
+    else if (destino === "depois") await gravarCampos(item.id, { dia_planejado: null, quando: null });
+    else await alterarItem(item, { status: "feito" });
+  }
+  await gravarConfig(CHAVE_FECHADO, dataLocalIso(hoje));
+}
+
 export async function ritualFeitoHoje(hoje = new Date()): Promise<boolean> {
   return (await lerConfig(CHAVE_FEITO)) === dataLocalIso(hoje);
 }
 
-/** Primeira abertura do dia sem ritual: abre o ritual (uma vez por dia). */
+/** Primeira abertura do dia sem plano: abre Meu dia (uma vez por dia). */
 export async function deveAbrirRitual(hoje = new Date()): Promise<boolean> {
   const dia = dataLocalIso(hoje);
   if ((await lerConfig(CHAVE_FEITO)) === dia || (await lerConfig(CHAVE_ABERTO)) === dia) return false;
@@ -65,7 +88,7 @@ export async function deveAbrirRitual(hoje = new Date()): Promise<boolean> {
 }
 
 /**
- * Passou da hora da regra "Ritual pendente" (10h por padrão) e o ritual não foi feito:
+ * Passou da hora da regra "Dia não planejado" (10h por padrão) e o dia não foi planejado:
  * mostra o aviso no topo uma vez só no dia. Desligar a regra desliga o aviso.
  */
 export async function deveLembrarRitual(agora = new Date()): Promise<boolean> {

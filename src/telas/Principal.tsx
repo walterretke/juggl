@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -50,18 +50,24 @@ import ItemLista, { type CampoEditavel, type Menu } from "./ItemLista";
 import PedidoNota from "./PedidoNota";
 import Pessoas from "./Pessoas";
 import Regras from "./Regras";
-import Ritual from "./Ritual";
+import MeuDia from "./MeuDia";
 import { rotuloAtalho } from "./origens";
 
 const MINUTO_MS = 60 * 1000;
 const MAX_DESFAZER = 30;
 
-/** Telas da janela principal: Agora (o foco), o ritual, as duas listas, Pessoas e Horas. */
-type Tela = "agora" | "ritual" | Lista | "pessoas" | "horas" | "regras" | "uso";
-const TELAS: Tela[] = ["agora", "ritual", "inbox", "a_fazer", "pessoas", "horas", "regras", "uso"];
+/** Telas da janela principal: Meu dia (o fluxo do dia), Agora (o foco), as duas listas, Pessoas e Horas. */
+type Tela = "dia" | "agora" | Lista | "pessoas" | "horas" | "regras" | "uso";
+const TELAS: Tela[] = ["dia", "agora", "inbox", "a_fazer", "pessoas", "horas", "regras", "uso"];
+/** Grupos da barra lateral; Regras e Uso ficam no rodapé, junto das configurações. */
+const GRUPOS_MENU: { titulo: string; telas: Tela[] }[] = [
+  { titulo: "Hoje", telas: ["dia", "agora"] },
+  { titulo: "Listas", telas: ["inbox", "a_fazer"] },
+  { titulo: "Acompanhar", telas: ["pessoas", "horas"] },
+];
 const NOME_TELA: Record<Tela, string> = {
+  dia: "Meu dia",
   agora: "Agora",
-  ritual: "Ritual da manhã",
   inbox: "Caixa de entrada",
   a_fazer: "A fazer",
   pessoas: "Pessoas",
@@ -121,7 +127,7 @@ async function mudancasDaEdicao(campo: CampoEditavel, texto: string): Promise<Mu
 }
 
 export default function Principal() {
-  const [lista, setLista] = useState<Tela>("inbox");
+  const [lista, setLista] = useState<Tela>("dia");
   const [foco, setFoco] = useState<Foco | null>(null);
   const [proximas, setProximas] = useState<Item[]>([]);
   const [pedidoNota, setPedidoNota] = useState<Pedido | null>(null);
@@ -142,7 +148,7 @@ export default function Principal() {
   const [erro, setErro] = useState<string | null>(null);
   const [agora, setAgora] = useState(() => new Date());
   const [prioridades, setPrioridades] = useState<Prioridade[]>([]);
-  /** Aumenta a cada recarga, para as telas com dados próprios (Ritual, Pessoas) recarregarem. */
+  /** Aumenta a cada recarga, para as telas com dados próprios (Meu dia, Pessoas) recarregarem. */
   const [versao, setVersao] = useState(0);
   const [ritualFeito, setRitualFeito] = useState(true);
   const [lembreteRitual, setLembreteRitual] = useState(false);
@@ -157,7 +163,7 @@ export default function Principal() {
   /** Pontuação de cada item quando o foco atual começou, para ver quem passou à frente. */
   const pontosDoInicio = useRef<Map<string, Urgencia> | null>(null);
   const desfazer = useRef<Alteracao[]>([]);
-  /** Item arrastado de uma tela que não é lista (Ritual, Pessoas), para soltar na barra lateral. */
+  /** Item arrastado de uma tela que não é lista (Meu dia, Pessoas), para soltar na barra lateral. */
   const arrastado = useRef<Item | null>(null);
   const timerAviso = useRef<number | undefined>(undefined);
 
@@ -177,15 +183,17 @@ export default function Principal() {
       setPrioridades(opcoes);
       const lidos = !ehLista(lista) ? [] : lista === "a_fazer" ? aFazer : await listarItens(lista);
       setFoco(emFoco);
-      setProximas(aFazer.slice(0, MAX_PROXIMAS));
+      // Próximas no Agora: as escolhidas para hoje; sem plano, as primeiras de A fazer como sugestão.
+      const hojeIso = dataLocalIso(new Date());
+      const doDia = aFazer.filter((i) => i.dia_planejado === hojeIso);
+      setProximas((doDia.length > 0 ? doDia : aFazer).slice(0, MAX_PROXIMAS));
       setItens(lidos);
       setContagem(total);
-      // Ao abrir o app: primeira vez no dia com algo pendente abre o ritual;
-      // senão começa no Agora se tiver algo em foco.
+      // Ao abrir o app começa em Meu dia; a primeira abertura do dia fica registrada
+      // para não abrir Meu dia de novo quando o dia virar com o app aberto.
       if (primeiraCarga.current) {
         primeiraCarga.current = false;
-        if (total.inbox + total.a_fazer > 0 && (await deveAbrirRitual())) setLista("ritual");
-        else if (emFoco) setLista("agora");
+        await deveAbrirRitual();
       }
       setVersao((v) => v + 1);
       setSelecionado((s) => Math.min(s, Math.max(lidos.length - 1, 0)));
@@ -214,12 +222,12 @@ export default function Principal() {
       .catch((e) => setErro(String(e)));
   }, []);
 
-  // O dia virou com o app aberto: abre o ritual. Depois das 10h sem ritual, lembra uma vez.
+  // O dia virou com o app aberto: abre Meu dia. Depois das 10h sem plano, lembra uma vez.
   const diaAtual = dataLocalIso(agora);
   useEffect(() => {
     if (!pronto) return;
     deveAbrirRitual()
-      .then((abrir) => abrir && contagem.inbox + contagem.a_fazer > 0 && setLista("ritual"))
+      .then((abrir) => abrir && contagem.inbox + contagem.a_fazer > 0 && setLista("dia"))
       .catch(() => {});
   }, [diaAtual]);
   useEffect(() => {
@@ -495,7 +503,9 @@ export default function Principal() {
       titulo: atual.item.titulo,
       acao: async (nota) => {
         await encerrarFoco(atual, "pausa", nota);
-        mostrarAviso("Pausado. Ele volta para A fazer.");
+        mostrarAviso(
+          atual.item.dia_planejado === dataLocalIso(new Date()) ? "Pausado. Ele volta para Hoje." : "Pausado. Ele volta para A fazer.",
+        );
         await carregar();
       },
     });
@@ -625,8 +635,8 @@ export default function Principal() {
       ? "Poucos avisos e certeiros. Ligue, desligue e ajuste cada regra."
       : lista === "uso"
       ? "As 4 semanas de uso real: como está indo e o que irrita."
-      : lista === "ritual"
-      ? "O que vence, quem cobrou e o que ficou pausado. Escolha até 3 para hoje."
+      : lista === "dia"
+      ? "O que chegou, as 3 de hoje, o que você está fazendo e o que já foi feito. Arraste os cartões entre as colunas."
       : lista === "pessoas"
       ? "Tudo que cada pessoa pediu, para responder quem está cobrando."
       : lista === "agora"
@@ -641,7 +651,7 @@ export default function Principal() {
           : `${total === 1 ? "Uma coisa chegou" : `${total} coisas chegaram`}. Decida o destino de cada uma.`
         : total === 0
           ? "Nada a fazer por enquanto."
-          : `${total === 1 ? "Uma tarefa" : `${total} tarefas`}, por prazo e prioridade.`;
+          : `${total === 1 ? "Uma tarefa" : `${total} tarefas`}: as de hoje primeiro, depois por prazo e prioridade.`;
 
   function trocarLista(l: Tela) {
     setLista(l);
@@ -725,33 +735,41 @@ export default function Principal() {
     </button>
   );
 
+  /** Uma tela na barra lateral, com o indicador de cada uma (foco, plano do dia, contagem). */
+  const botaoTela = (l: Tela) => (
+    <button
+      key={l}
+      type="button"
+      onClick={() => trocarLista(l)}
+      {...alvoDeArrasto(l)}
+      className={`flex items-center justify-between rounded-lg px-3 py-2 text-[15px] ${
+        alvoArrasto === l
+          ? "bg-destaque-claro text-destaque-tinta ring-2 ring-destaque"
+          : lista === l
+            ? "bg-folha font-semibold text-tinta shadow-sm"
+            : "text-tinta-2 hover:text-tinta"
+      }`}
+    >
+      {NOME_TELA[l]}
+      {l === "agora" ? (
+        foco && <span title="Algo em foco" className="size-2 rounded-full bg-destaque" />
+      ) : l === "dia" ? (
+        !ritualFeito && <span title="Dia ainda não planejado" className="size-2 rounded-full border-[1.5px] border-destaque" />
+      ) : (
+        ehLista(l) && <span className="text-[13px] font-normal tabular-nums text-apagado">{contagem[l] || ""}</span>
+      )}
+    </button>
+  );
+
   return (
     <div className="flex h-screen bg-folha text-tinta select-none">
       <nav aria-label="Listas" className="hidden w-56 shrink-0 flex-col gap-1 bg-lateral px-4 py-7 md:flex">
         <div className="px-3 pb-6 font-titulo text-[22px] font-semibold tracking-tight">Juggl</div>
-        {TELAS.map((l) => (
-          <button
-            key={l}
-            type="button"
-            onClick={() => trocarLista(l)}
-            {...alvoDeArrasto(l)}
-            className={`flex items-center justify-between rounded-lg px-3 py-2 text-[15px] ${
-              alvoArrasto === l
-                ? "bg-destaque-claro text-destaque-tinta ring-2 ring-destaque"
-                : lista === l
-                  ? "bg-folha font-semibold text-tinta shadow-sm"
-                  : "text-tinta-2 hover:text-tinta"
-            }`}
-          >
-            {NOME_TELA[l]}
-            {l === "agora" ? (
-              foco && <span title="Algo em foco" className="size-2 rounded-full bg-destaque" />
-            ) : l === "ritual" ? (
-              !ritualFeito && <span title="Ainda não feito hoje" className="size-2 rounded-full border-[1.5px] border-destaque" />
-            ) : (
-              ehLista(l) && <span className="text-[13px] font-normal tabular-nums text-apagado">{contagem[l] || ""}</span>
-            )}
-          </button>
+        {GRUPOS_MENU.map((grupo) => (
+          <div key={grupo.titulo} className="mb-4 flex flex-col gap-0.5">
+            <h3 className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-apagado">{grupo.titulo}</h3>
+            {grupo.telas.map(botaoTela)}
+          </div>
         ))}
         {foco && lista !== "agora" && (
           <button
@@ -764,6 +782,9 @@ export default function Principal() {
           </button>
         )}
         <div className="flex-1" />
+        {botaoTela("regras")}
+        {botaoTela("uso")}
+        <div className="my-2 border-t border-linha" />
         <button
           type="button"
           onClick={() => setAnotando(true)}
@@ -840,18 +861,18 @@ export default function Principal() {
             </div>
           )}
 
-          {lembreteRitual && lista !== "ritual" && (
+          {lembreteRitual && lista !== "dia" && (
             <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl bg-destaque-claro px-4 py-3 text-sm text-destaque-tinta">
-              <span className="flex-1 font-semibold">Já passou das 10h e o ritual de hoje não foi feito.</span>
+              <span className="flex-1 font-semibold">Já passou das 10h e você ainda não planejou o dia.</span>
               <button
                 type="button"
                 onClick={() => {
                   setLembreteRitual(false);
-                  trocarLista("ritual");
+                  trocarLista("dia");
                 }}
                 className="rounded-md bg-destaque px-3 py-1 font-semibold text-folha hover:opacity-90"
               >
-                Fazer agora
+                Planejar agora
               </button>
               <button type="button" onClick={() => setLembreteRitual(false)} className="rounded-md px-2 py-1 hover:bg-folha/50">
                 Hoje não
@@ -888,16 +909,20 @@ export default function Principal() {
             </p>
           )}
 
-          {lista === "ritual" && (
-            <Ritual
+          {lista === "dia" && (
+            <MeuDia
               versao={versao}
-              aoComecar={(quantos) => {
+              foco={foco}
+              planejado={ritualFeito}
+              aoAplicar={aplicar}
+              aoFocar={focar}
+              aoPausar={pausar}
+              aoConcluir={concluirFoco}
+              aoAlterar={() => {
                 setLembreteRitual(false);
-                mostrarAviso(quantos > 0 ? `Bom dia. As ${quantos} do dia estão no topo de A fazer.` : "Bom dia.");
-                trocarLista("agora");
                 carregar();
               }}
-              aoPular={() => trocarLista(foco ? "agora" : "inbox")}
+              aoAvisar={mostrarAviso}
               aoArrastar={(item) => (arrastado.current = item)}
             />
           )}
@@ -923,20 +948,37 @@ export default function Principal() {
             <Agora
               foco={foco}
               proximas={proximas}
-              ritualFeito={ritualFeito}
+              planejado={ritualFeito}
+              doDia={proximas.some((i) => i.dia_planejado === dataLocalIso(agora))}
               aoFocar={focar}
               aoPausar={pausar}
               aoConcluir={concluirFoco}
               aoCobrar={() => foco && cobrar(foco.item)}
-              aoAbrirRitual={() => trocarLista("ritual")}
+              aoPlanejar={() => trocarLista("dia")}
               aoMudarNota={(nota) => foco && aplicar(foco.item, { nota }, nota ? "Descrição salva" : "Descrição removida")}
             />
           )}
 
           <ul className="flex flex-col gap-1.5 pb-6">
-            {itens?.map((item, i) => (
+            {itens?.map((item, i) => {
+              // A fazer: as escolhidas para hoje vêm primeiro; um título separa Hoje de Depois.
+              const doDia = (x: Item | undefined) => x?.dia_planejado === dataLocalIso(agora);
+              const titulo =
+                lista !== "a_fazer" || !itens.some((x) => doDia(x))
+                  ? null
+                  : i === 0 && doDia(item)
+                    ? "Hoje"
+                    : !doDia(item) && (i === 0 || doDia(itens[i - 1]))
+                      ? "Depois"
+                      : null;
+              return (
+              <Fragment key={item.id}>
+              {titulo && (
+                <li aria-hidden="true" className={`px-4 text-xs font-semibold uppercase tracking-wider text-apagado ${i > 0 ? "mt-5" : ""}`}>
+                  {titulo}
+                </li>
+              )}
               <ItemLista
-                key={item.id}
                 item={item}
                 indice={i}
                 ativo={i === selecionado}
@@ -1003,7 +1045,9 @@ export default function Principal() {
                   </form>
                 )}
               </ItemLista>
-            ))}
+              </Fragment>
+              );
+            })}
           </ul>
         </main>
 
@@ -1050,12 +1094,11 @@ export default function Principal() {
                 <Dica teclas="Ctrl+C">copiar a lista</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
               </>
-            ) : lista === "ritual" ? (
+            ) : lista === "dia" ? (
               <>
-                <Dica teclas="↑ ↓">andar</Dica>
-                <Dica teclas="Espaço">escolher</Dica>
-                <Dica teclas="Enter">começar o dia</Dica>
-                <Dica teclas="Esc">pular</Dica>
+                <span>Arraste os cartões entre as colunas</span>
+                <Dica teclas="C">nova captura</Dica>
+                <Dica teclas="Z">desfazer</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
               </>
             ) : lista === "pessoas" ? (

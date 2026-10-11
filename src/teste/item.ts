@@ -13,6 +13,7 @@ export function item(id: string, extra: Partial<Item> = {}): Item {
     prazo: null,
     prometido_para: null,
     dia_planejado: null,
+    quando: null,
     link: null,
     origem: "manual",
     id_externo: null,
