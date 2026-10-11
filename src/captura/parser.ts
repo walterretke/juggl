@@ -155,3 +155,15 @@ function definirLink(resultado: Captura, url: string) {
   resultado.origem = reconhecido?.origem ?? "manual";
   resultado.idExterno = reconhecido?.idExterno ?? null;
 }
+
+/**
+ * As mesmas marcações do modo avançado, lidas do título do formulário. Um "#" seguido só
+ * de números ("Bug #4821") fica no título: no formulário ele quase sempre é um número de
+ * chamado, não um projeto.
+ */
+export function marcacoesDoTitulo(titulo: string, hoje: Date, prioridades: OpcaoPrioridade[] = PRIORIDADES_PADRAO): Captura {
+  const PROTEGIDO = "\u0001";
+  const texto = titulo.replace(/(^|\s)#(\d+)(?=[\s,;:.!?]|$)/g, `$1${PROTEGIDO}$2`);
+  const lido = parseCaptura(texto, hoje, null, prioridades);
+  return { ...lido, titulo: lido.titulo.split(PROTEGIDO).join("#") };
+}

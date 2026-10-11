@@ -1,8 +1,9 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { dataLocalIso, formatarDuracao } from "../captura/datas";
+import { dataLocalIso, formatarCronometro, formatarDuracao } from "../captura/datas";
 import { interpretarPrazo } from "../captura/parser";
 import { agendarBackupDiario } from "../db/backup";
 import { ATALHO_PADRAO, lerConfig } from "../db/config";
@@ -22,16 +23,25 @@ import {
   buscarOuCriarProjeto,
   contarPorLista,
   desfazerAlteracao,
+  devolverAguardando,
+  lerItem,
   listarItens,
   listarSugestoes,
   registrarCobranca,
   type Alteracao,
   type Item,
+  type ItemBusca,
   type Lista,
   type Mudancas,
 } from "../db/itens";
 import { listarPrioridades, type Prioridade } from "../db/prioridades";
-import { deveAbrirRitual, deveLembrarRitual, ritualFeitoHoje } from "../db/ritual";
+import { dadosDaDaily, deveAbrirRitual, deveLembrarRitual, ritualFeitoHoje } from "../db/ritual";
+import { gerarRecorrentes } from "../db/recorrencias";
+import { resumoDaDaily } from "../dia/daily";
+import { statusParaResponder } from "../pessoas/resumo";
+import { abrirMiniJanela } from "../mini";
+import Busca, { type Comando } from "./Busca";
+import Icone from "./Icone";
 import { liberarAvisosDoFoco, verificarRegras } from "../regras/verificar";
 import { notificar } from "../regras/notificar";
 import type { Urgencia } from "../regras/urgencia";
@@ -56,13 +66,16 @@ import { rotuloAtalho } from "./origens";
 const MINUTO_MS = 60 * 1000;
 const MAX_DESFAZER = 30;
 
-/** Telas da janela principal: Meu dia (o fluxo do dia), Agora (o foco), as duas listas, Pessoas e Horas. */
+/** Telas da janela principal: Meu dia (o fluxo do dia), Agora (o foco), as listas, Pessoas e Horas. */
 type Tela = "dia" | "agora" | Lista | "pessoas" | "horas" | "regras" | "uso";
-const TELAS: Tela[] = ["dia", "agora", "inbox", "a_fazer", "pessoas", "horas", "regras", "uso"];
-/** Grupos da barra lateral; Regras e Uso ficam no rodapé, junto das configurações. */
+const TELAS: Tela[] = ["dia", "agora", "inbox", "a_fazer", "aguardando", "pessoas", "horas", "regras", "uso"];
+/**
+ * Grupos da barra lateral; Regras e Uso ficam no rodapé, junto das configurações.
+ * Agora não tem botão próprio: o cartão "Em foco", logo abaixo de Meu dia, leva até ele.
+ */
 const GRUPOS_MENU: { titulo: string; telas: Tela[] }[] = [
-  { titulo: "Hoje", telas: ["dia", "agora"] },
-  { titulo: "Listas", telas: ["inbox", "a_fazer"] },
+  { titulo: "Hoje", telas: ["dia"] },
+  { titulo: "Listas", telas: ["inbox", "a_fazer", "aguardando"] },
   { titulo: "Acompanhar", telas: ["pessoas", "horas"] },
 ];
 const NOME_TELA: Record<Tela, string> = {
@@ -70,6 +83,7 @@ const NOME_TELA: Record<Tela, string> = {
   agora: "Agora",
   inbox: "Caixa de entrada",
   a_fazer: "A fazer",
+  aguardando: "Aguardando",
   pessoas: "Pessoas",
   horas: "Horas da semana",
   regras: "Regras",
@@ -77,7 +91,7 @@ const NOME_TELA: Record<Tela, string> = {
 };
 
 function ehLista(tela: Tela): tela is Lista {
-  return tela === "inbox" || tela === "a_fazer";
+  return tela === "inbox" || tela === "a_fazer" || tela === "aguardando";
 }
 const MAX_PROXIMAS = 3;
 const MAX_TITULO_BANDEJA = 40;
@@ -135,7 +149,7 @@ export default function Principal() {
   const primeiraCarga = useRef(true);
   const ultimoPulso = useRef(Date.now());
   const [itens, setItens] = useState<Item[] | null>(null);
-  const [contagem, setContagem] = useState<Record<Lista, number>>({ inbox: 0, a_fazer: 0 });
+  const [contagem, setContagem] = useState<Record<Lista, number>>({ inbox: 0, a_fazer: 0, aguardando: 0 });
   const [selecionado, setSelecionado] = useState(0);
   const [edicao, setEdicao] = useState<Edicao | null>(null);
   const [configAberta, setConfigAberta] = useState(false);
@@ -160,6 +174,9 @@ export default function Principal() {
   const [atualizacao, setAtualizacao] = useState<Update | null>(null);
   const [instalando, setInstalando] = useState(false);
   const [anotando, setAnotando] = useState(false);
+  const [buscando, setBuscando] = useState(false);
+  /** Item a selecionar quando a lista carregar (vindo da busca global). */
+  const selecionarId = useRef<string | null>(null);
   /** Pontuação de cada item quando o foco atual começou, para ver quem passou à frente. */
   const pontosDoInicio = useRef<Map<string, Urgencia> | null>(null);
   const desfazer = useRef<Alteracao[]>([]);
@@ -196,7 +213,10 @@ export default function Principal() {
         await deveAbrirRitual();
       }
       setVersao((v) => v + 1);
-      setSelecionado((s) => Math.min(s, Math.max(lidos.length - 1, 0)));
+      const pedido = selecionarId.current ? lidos.findIndex((i) => i.id === selecionarId.current) : -1;
+      // Só a carga da lista de destino usa o pedido (uma carga da tela anterior pode chegar antes).
+      if (ehLista(lista)) selecionarId.current = null;
+      setSelecionado((s) => (pedido >= 0 ? pedido : Math.min(s, Math.max(lidos.length - 1, 0))));
       setAgora(new Date());
     } catch (e) {
       setErro(String(e));
@@ -242,8 +262,19 @@ export default function Principal() {
   carregarAtual.current = carregar;
   useEffect(() => {
     if (!pronto) return;
-    const rodar = () => {
+    const rodar = async () => {
       registrarDiaDeUso().catch(() => {});
+      // Antes das regras: quem voltou de Aguardando já entra no aviso de cobrar o retorno.
+      const voltaram = await devolverAguardando().catch(() => 0);
+      const recorrentes = await gerarRecorrentes().catch((e) => {
+        console.error("Recorrentes:", e);
+        return [] as string[];
+      });
+      if (voltaram > 0 || recorrentes.length > 0) {
+        carregarAtual.current();
+        if (recorrentes.length > 0)
+          mostrarAviso(recorrentes.length === 1 ? `Recorrente na caixa de entrada: ${recorrentes[0]}` : `${recorrentes.length} recorrentes na caixa de entrada.`);
+      }
       verificarRegras()
         .then((marcados) => {
           if (marcados > 0) return carregarAtual.current();
@@ -270,6 +301,7 @@ export default function Principal() {
   useEffect(() => {
     const id = foco ? `${foco.item.id}-${foco.inicio}` : null;
     if (focoAnterior.current === id) return;
+    emit("foco:mudou").catch(() => {});
     if (focoAnterior.current) liberarAvisosDoFoco().catch(() => {});
     focoAnterior.current = id;
     // Começou um foco: guarda as pontuações e avisa se outro item está bem à frente.
@@ -532,6 +564,92 @@ export default function Principal() {
     };
   }, [carregar]);
 
+  /** Copia uma linha com o status do item, para responder quem cobrou. */
+  async function copiarStatus(item: Item) {
+    try {
+      await writeText(statusParaResponder(item, new Date()));
+      mostrarAviso("Status copiado. Cole na conversa do Teams.");
+    } catch (e) {
+      setErro(String(e));
+    }
+  }
+
+  /** Copia o resumo da daily: o que foi feito, o que é para hoje e o que está travado. */
+  async function copiarDaily() {
+    try {
+      await writeText(resumoDaDaily(await dadosDaDaily(), new Date()));
+      mostrarAviso("Resumo da daily copiado.");
+    } catch (e) {
+      setErro(String(e));
+    }
+  }
+
+  async function abrirMini() {
+    try {
+      await abrirMiniJanela();
+    } catch (e) {
+      mostrarAviso(`Não consegui abrir a mini-janela: ${e}`);
+    }
+  }
+
+  /** Item escolhido na busca global: abre na lista dele; um concluído ou arquivado volta para A fazer. */
+  async function abrirDaBusca(achado: ItemBusca) {
+    const item = await lerItem(achado.id);
+    if (!item) return;
+    if (item.status === "em_foco") return trocarLista("agora");
+    const fechado = item.status === "feito" || item.status === "arquivado";
+    if (fechado) {
+      // Sem `aplicar`: a recarga dela seria a da tela atual e chegaria depois da lista nova.
+      const alteracao = await alterarItem(item, { status: "a_fazer" });
+      desfazer.current = [...desfazer.current, alteracao].slice(-MAX_DESFAZER);
+      mostrarAviso("Reaberto em A fazer", true);
+    }
+    const destino: Lista = fechado ? "a_fazer" : item.status === "inbox" ? "inbox" : item.status === "aguardando" ? "aguardando" : "a_fazer";
+    selecionarId.current = item.id;
+    if (lista === destino) await carregar();
+    else setLista(destino);
+  }
+
+  const comandos: Comando[] = [
+    ...TELAS.map((t) => ({ nome: `Ir para ${NOME_TELA[t]}`, acao: () => trocarLista(t) })),
+    { nome: "Nova captura", tecla: "C", acao: () => invoke("abrir_captura") },
+    { nome: "Copiar o resumo da daily", acao: () => copiarDaily() },
+    { nome: "Abrir a mini-janela de foco", acao: () => abrirMini() },
+    ...(foco ? [{ nome: `Pausar ${foco.item.titulo}`, tecla: "P", acao: () => pausar() }] : []),
+    { nome: "Anotar o que irrita", tecla: "!", acao: () => setAnotando(true) },
+    { nome: "Configurações", tecla: ",", acao: () => setConfigAberta(true) },
+  ];
+
+  // Ctrl+K abre a busca de qualquer tela (menos com outra janela de diálogo aberta).
+  // Ctrl+C numa lista copia o status do item selecionado; em Meu dia, o resumo da daily.
+  useEffect(() => {
+    function aoTeclar(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      if (configAberta || pedidoNota || anotando || buscando) return;
+      const tecla = e.key.toLowerCase();
+      if (tecla === "k") {
+        e.preventDefault();
+        setBuscando(true);
+        return;
+      }
+      if (tecla !== "c" || edicao || menu || window.getSelection()?.toString()) return;
+      if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select")) return;
+      const item = itens?.[selecionado];
+      if (ehLista(lista) && item) {
+        e.preventDefault();
+        copiarStatus(item);
+      } else if (lista === "dia") {
+        e.preventDefault();
+        copiarDaily();
+      } else if (lista === "agora" && foco) {
+        e.preventDefault();
+        copiarStatus(foco.item);
+      }
+    }
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  });
+
   async function iniciarEdicao(campo: CampoEditavel, item: Item) {
     if (campo === "pessoa" || campo === "projeto") setSugestoes(await listarSugestoes());
     setEdicao({ campo, valor: valorAtual(item, campo), erro: null });
@@ -554,7 +672,7 @@ export default function Principal() {
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
       // # e @ podem vir com AltGr (Ctrl+Alt no Windows) em alguns teclados.
-      if (edicao || configAberta || pedidoNota || menu || anotando || ((e.ctrlKey || e.metaKey || e.altKey) && e.key !== "#" && e.key !== "@")) return;
+      if (edicao || configAberta || pedidoNota || menu || anotando || buscando || ((e.ctrlKey || e.metaKey || e.altKey) && e.key !== "#" && e.key !== "@")) return;
       // Digitando num campo (busca, código do projeto): as letras são texto, não atalhos.
       if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select")) return;
       const item = itens?.[selecionado];
@@ -572,6 +690,7 @@ export default function Principal() {
         z: () => desfazerUltima(),
         i: () => atualizacao && instalar(),
         "!": () => setAnotando(true),
+        "/": () => setBuscando(true),
         s: () =>
           lerConfigDevops().then((cfg) =>
             cfg.organizacao ? sincronizarAzureAgora(true).catch(() => {}) : mostrarAviso("Configure o Azure DevOps em Configurações (,)."),
@@ -592,7 +711,11 @@ export default function Principal() {
       } else if (item) {
         Object.assign(acoes, {
           f: () => focar(item),
-          Enter: () => lista === "inbox" && aplicar(item, { status: "a_fazer" }, "Movido para A fazer"),
+          Enter: () =>
+            lista === "inbox"
+              ? aplicar(item, { status: "a_fazer" }, "Movido para A fazer")
+              : lista === "aguardando" && aplicar(item, { status: "a_fazer" }, "Voltou para A fazer"),
+          w: () => setMenu("aguardando"),
           e: () => aplicar(item, { status: "arquivado" }, "Arquivado"),
           x: () => aplicar(item, { status: "feito" }, "Concluído"),
           p: () => iniciarEdicao("prazo", item),
@@ -617,7 +740,7 @@ export default function Principal() {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [edicao, configAberta, pedidoNota, menu, anotando, itens, selecionado, lista, aplicar, foco, proximas, prioridades, atualizacao]);
+  }, [edicao, configAberta, pedidoNota, menu, anotando, buscando, itens, selecionado, lista, aplicar, foco, proximas, prioridades, atualizacao]);
 
   // Mantém o item selecionado visível ao navegar pelo teclado.
   useEffect(() => {
@@ -645,6 +768,10 @@ export default function Principal() {
         : "Escolha o que fazer agora."
       : itens === null
       ? ""
+      : lista === "aguardando"
+        ? total === 0
+          ? "Nada esperando ninguém."
+          : `${total === 1 ? "Um item espera" : `${total} itens esperam`} a resposta de alguém. No dia de cobrar, voltam para A fazer.`
       : lista === "inbox"
         ? total === 0
           ? "Nada esperando triagem."
@@ -669,7 +796,21 @@ export default function Principal() {
       concluir: () => aplicar(item, { status: "feito" }, "Concluído"),
       focar: () => focar(item),
       mover: (destino: Lista) =>
-        aplicar(item, { status: destino }, destino === "inbox" ? "Voltou para a caixa de entrada" : "Movido para A fazer"),
+        aplicar(
+          item,
+          { status: destino },
+          destino === "inbox" ? "Voltou para a caixa de entrada" : item.status === "aguardando" ? "Voltou para A fazer" : "Movido para A fazer",
+        ),
+      aguardar: (quem: string | null, ate: string | null) => {
+        setMenu(null);
+        aplicar(
+          item,
+          // Planejado para hoje e esperando alguém não combina: sai de Hoje.
+          { status: "aguardando", aguardando_quem: quem, aguardando_ate: ate, dia_planejado: null, quando: null },
+          quem ? `Aguardando ${quem}` : "Aguardando",
+        );
+      },
+      copiarStatus: () => copiarStatus(item),
       arquivar: () => aplicar(item, { status: "arquivado" }, "Arquivado"),
       abrirLink: () => item.link && openUrl(item.link),
       editar: (campo: CampoEditavel) => {
@@ -714,8 +855,16 @@ export default function Principal() {
         const item = itens?.find((i) => i.id === id) ?? (arrastado.current?.id === id ? arrastado.current : null);
         if (!item) return;
         if (destino === "agora") focar(item);
-        else if (ehLista(destino) && destino !== lista)
-          aplicar(item, { status: destino }, destino === "inbox" ? "Voltou para a caixa de entrada" : "Movido para A fazer");
+        else if (ehLista(destino) && destino !== lista && item.status !== destino)
+          aplicar(
+            item,
+            destino === "aguardando" ? { status: destino, dia_planejado: null, quando: null } : { status: destino },
+            destino === "inbox"
+              ? "Voltou para a caixa de entrada"
+              : destino === "aguardando"
+                ? "Aguardando. Aperte W para dizer quem e quando cobrar."
+                : "Movido para A fazer",
+          );
       },
     };
   }
@@ -766,22 +915,34 @@ export default function Principal() {
       {/* A barra lateral rola sozinha em janelas baixas, sem fazer a página inteira rolar junto. */}
       <nav aria-label="Listas" className="hidden w-56 shrink-0 flex-col gap-1 overflow-y-auto bg-lateral px-4 py-6 md:flex">
         <div className="px-3 pb-4 font-titulo text-[22px] font-semibold tracking-tight">Juggl</div>
-        {GRUPOS_MENU.map((grupo) => (
-          <div key={grupo.titulo} className="mb-3 flex shrink-0 flex-col gap-0.5">
-            <h3 className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-apagado">{grupo.titulo}</h3>
-            {grupo.telas.map(botaoTela)}
-          </div>
+        {GRUPOS_MENU.map((grupo, g) => (
+          <Fragment key={grupo.titulo}>
+            <div className="mb-3 flex shrink-0 flex-col gap-0.5">
+              <h3 className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-apagado">{grupo.titulo}</h3>
+              {grupo.telas.map(botaoTela)}
+              {g === 0 && (
+                <CartaoFoco
+                  foco={foco}
+                  ativo={lista === "agora"}
+                  alvo={alvoArrasto === "agora"}
+                  arrasto={alvoDeArrasto("agora")}
+                  aoAbrir={() => trocarLista("agora")}
+                  aoPausar={pausar}
+                  aoAbrirMini={abrirMini}
+                />
+              )}
+            </div>
+          </Fragment>
         ))}
-        {foco && lista !== "agora" && (
-          <button
-            type="button"
-            onClick={() => trocarLista("agora")}
-            className="mx-3 mt-1 truncate text-left text-[13px] text-suave hover:text-tinta"
-            title={foco.item.titulo}
-          >
-            Em foco: {foco.item.titulo}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setBuscando(true)}
+          className="mb-2 flex w-full shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm text-suave hover:bg-folha hover:text-tinta"
+        >
+          <Icone nome="busca" className="shrink-0" />
+          <span className="flex-1">Buscar</span>
+          <kbd className="font-sans text-xs text-apagado">Ctrl+K</kbd>
+        </button>
         <div className="flex-1" />
         {botaoTela("regras")}
         {botaoTela("uso")}
@@ -909,6 +1070,11 @@ export default function Principal() {
               Aperte {rotuloAtalho(atalho)} em qualquer janela para capturar um pedido.
             </p>
           )}
+          {itens?.length === 0 && lista === "aguardando" && (
+            <p className="mt-16 text-center text-[15px] text-apagado">
+              Pediu algo a alguém e está esperando? Aperte W num item de A fazer: ele sai da frente e volta no dia de cobrar.
+            </p>
+          )}
 
           {lista === "dia" && (
             <MeuDia
@@ -925,6 +1091,8 @@ export default function Principal() {
               }}
               aoAvisar={mostrarAviso}
               aoArrastar={(item) => (arrastado.current = item)}
+              aoCopiarDaily={copiarDaily}
+              atalhoCaptura={rotuloAtalho(atalho)}
             />
           )}
 
@@ -957,6 +1125,7 @@ export default function Principal() {
               aoCobrar={() => foco && cobrar(foco.item)}
               aoPlanejar={() => trocarLista("dia")}
               aoMudarNota={(nota) => foco && aplicar(foco.item, { nota }, nota ? "Descrição salva" : "Descrição removida")}
+              aoAbrirMini={abrirMini}
             />
           )}
 
@@ -1070,6 +1239,7 @@ export default function Principal() {
             lista === "horas" ? (
               <>
                 <Dica teclas="← →">trocar semana</Dica>
+                <Dica teclas="N">lançar tempo</Dica>
                 <Dica teclas="Ctrl+C">copiar</Dica>
                 <Dica teclas="Ctrl+S">exportar CSV</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
@@ -1098,6 +1268,8 @@ export default function Principal() {
             ) : lista === "dia" ? (
               <>
                 <span>Arraste os cartões entre as colunas</span>
+                <Dica teclas="Ctrl+C">resumo da daily</Dica>
+                <Dica teclas="Ctrl+K">buscar</Dica>
                 <Dica teclas="C">nova captura</Dica>
                 <Dica teclas="Z">desfazer</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
@@ -1125,6 +1297,8 @@ export default function Principal() {
             ) : (
               <>
                 {lista === "inbox" && <Dica teclas="Enter">mover para A fazer</Dica>}
+                {lista === "aguardando" && <Dica teclas="Enter">voltar para A fazer</Dica>}
+                <Dica teclas="W">{lista === "aguardando" ? "quem e quando" : "aguardando"}</Dica>
                 {lista === "inbox" && devopsAtivo && <Dica teclas="S">Azure DevOps</Dica>}
                 <Dica teclas="F">focar</Dica>
                 <Dica teclas="P">prazo</Dica>
@@ -1136,7 +1310,9 @@ export default function Principal() {
                 <Dica teclas="B">cobrou de novo</Dica>
                 <Dica teclas="X">concluir</Dica>
                 <Dica teclas="E">arquivar</Dica>
+                <Dica teclas="Ctrl+C">copiar status</Dica>
                 <Dica teclas="Z">desfazer</Dica>
+                <Dica teclas="Ctrl+K">buscar</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
               </>
             )
@@ -1157,6 +1333,18 @@ export default function Principal() {
               })
               .catch((e) => setErro(String(e)));
           }}
+        />
+      )}
+      {buscando && (
+        <Busca
+          comandos={comandos}
+          aoFechar={() => setBuscando(false)}
+          aoAbrir={(item) => abrirDaBusca(item).catch((e) => setErro(String(e)))}
+          aoCopiarStatus={(achado) =>
+            lerItem(achado.id)
+              .then((item) => item && copiarStatus(item))
+              .catch((e) => setErro(String(e)))
+          }
         />
       )}
       {pedidoNota && (
@@ -1197,5 +1385,80 @@ function Dica({ teclas, children }: { teclas: string; children: React.ReactNode 
     <span>
       <b className="font-semibold text-tinta-2">{teclas}</b> {children}
     </span>
+  );
+}
+
+interface PropsCartaoFoco {
+  foco: Foco | null;
+  ativo: boolean;
+  /** Um item está sendo arrastado por cima: soltar põe em foco. */
+  alvo: boolean;
+  arrasto: React.HTMLAttributes<HTMLElement>;
+  aoAbrir: () => void;
+  aoPausar: () => void;
+  aoAbrirMini: () => void;
+}
+
+/**
+ * O foco na barra lateral, sempre à vista: título, timer e Pausar. Clicar abre a tela
+ * Agora; soltar um item aqui põe ele em foco.
+ */
+function CartaoFoco({ foco, ativo, alvo, arrasto, aoAbrir, aoPausar, aoAbrirMini }: PropsCartaoFoco) {
+  const [agora, setAgora] = useState(() => Date.now());
+  useEffect(() => {
+    if (!foco) return;
+    setAgora(Date.now());
+    const relogio = setInterval(() => setAgora(Date.now()), 1000);
+    return () => clearInterval(relogio);
+  }, [foco]);
+
+  const borda = alvo
+    ? "bg-destaque-claro ring-2 ring-destaque"
+    : ativo
+      ? "bg-folha shadow-sm ring-1 ring-destaque"
+      : foco
+        ? "bg-folha/70 hover:bg-folha"
+        : "hover:bg-folha/60";
+  if (!foco) {
+    return (
+      <button
+        type="button"
+        {...arrasto}
+        onClick={aoAbrir}
+        title="Tela Agora. Solte um item aqui para focar."
+        className={`mt-1 flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-left text-[13px] text-apagado ${borda}`}
+      >
+        <span className="size-2 shrink-0 rounded-full border-[1.5px] border-apagado" />
+        Nada em foco
+      </button>
+    );
+  }
+  return (
+    <div {...arrasto} className={`mt-1 flex shrink-0 flex-col gap-1 rounded-xl px-3 py-2.5 ${borda}`}>
+      <button type="button" onClick={aoAbrir} title={`${foco.item.titulo}: abrir a tela Agora`} className="text-left">
+        <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-destaque">
+          <span className="size-1.5 rounded-full bg-destaque" />
+          Em foco
+        </span>
+        <span className="mt-0.5 line-clamp-2 text-[13px] leading-snug font-medium text-tinta">{foco.item.titulo}</span>
+      </button>
+      <div className="flex items-center gap-1">
+        <span className="flex-1 font-titulo text-lg font-medium tabular-nums tracking-tight">
+          {formatarCronometro(agora - new Date(foco.inicio).getTime())}
+        </span>
+        <button type="button" title="Pausar (P na tela Agora)" aria-label="Pausar" onClick={aoPausar} className="rounded-md p-1 text-suave hover:bg-etiqueta hover:text-tinta">
+          <Icone nome="pausa" />
+        </button>
+        <button
+          type="button"
+          title="Mini-janela sempre por cima"
+          aria-label="Abrir a mini-janela de foco"
+          onClick={aoAbrirMini}
+          className="rounded-md p-1 text-suave hover:bg-etiqueta hover:text-tinta"
+        >
+          <Icone nome="janela" />
+        </button>
+      </div>
+    </div>
   );
 }

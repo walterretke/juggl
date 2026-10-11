@@ -30,6 +30,10 @@ interface Props {
   aoAvisar: (texto: string) => void;
   /** Um cartão começou a ser arrastado (para soltar também na barra lateral). */
   aoArrastar: (item: Item) => void;
+  /** Copia o resumo da daily (ontem, hoje, bloqueios). */
+  aoCopiarDaily: () => void;
+  /** Atalho global da captura, para o primeiro uso. */
+  atalhoCaptura: string;
 }
 
 type Coluna = "chegou" | "hoje" | "fazendo" | "feito" | "depois";
@@ -82,7 +86,11 @@ function Cartao({ item, hoje, arrasto, numero, children }: PropsCartao) {
         {item.prioridade && <Etiqueta>{item.prioridade}</Etiqueta>}
         {item.status === "pausado" && <Etiqueta>Pausado</Etiqueta>}
       </div>
-      {item.nota_pausa && <p className="truncate text-[13px] text-suave">Parou em: {item.nota_pausa}</p>}
+      {item.nota_pausa && (
+        <p className="line-clamp-2 text-[13px] text-suave" title={item.nota_pausa}>
+          Parou em: {item.nota_pausa}
+        </p>
+      )}
     </article>
   );
 }
@@ -114,6 +122,8 @@ export default function MeuDia({
   aoAlterar,
   aoAvisar,
   aoArrastar,
+  aoCopiarDaily,
+  atalhoCaptura,
 }: Props) {
   const [itens, setItens] = useState<Item[] | null>(null);
   const [feitos, setFeitos] = useState<Item[]>([]);
@@ -285,40 +295,75 @@ export default function MeuDia({
 
   const botaoPequeno = "rounded-md px-2 text-[13px] font-semibold text-suave hover:bg-etiqueta hover:text-tinta";
 
+  // Banco vazio: a primeira vez de alguém (um colega instalando). Três passos em vez de colunas vazias.
+  const primeiraVez = itens.length === 0 && feitos.length === 0 && !foco;
+
   return (
     <div className="flex flex-col gap-5 pb-6">
-      <ol aria-label="Fluxo do dia" className="-mt-3 flex flex-wrap gap-1.5">
-        {ETAPAS.map((etapa, i) => {
-          const feita = etapaFeita[i];
-          const atual = i === etapaAtual;
-          const conteudo = (
-            <>
-              <b
-                className={`flex size-5 items-center justify-center rounded-full text-[11px] ${
-                  feita ? "bg-ok text-folha" : atual ? "bg-destaque text-folha" : "bg-folha text-suave"
-                }`}
-              >
-                {feita ? "✓" : i + 1}
-              </b>
-              {etapa}
-            </>
-          );
-          const classe = `flex items-center gap-2 rounded-full py-1 pr-3 pl-1 text-[13px] ${
-            feita ? "bg-ok-claro text-ok" : atual ? "bg-destaque-claro font-semibold text-destaque-tinta" : "bg-etiqueta text-suave"
-          }`;
-          return (
-            <li key={etapa}>
-              {i === 3 && !fechado ? (
-                <button type="button" onClick={abrirFechamento} className={`${classe} ring-1 ring-destaque hover:opacity-90`}>
-                  {conteudo}
-                </button>
-              ) : (
-                <span className={classe}>{conteudo}</span>
-              )}
-            </li>
-          );
-        })}
-      </ol>
+      {primeiraVez && (
+        <section aria-label="Primeiros passos" className="rounded-2xl bg-cartao px-6 py-5 shadow-[0_0_0_1px_var(--color-linha)]">
+          <h2 className="font-titulo text-[22px] font-medium">Bem-vindo ao Juggl</h2>
+          <p className="mt-1 text-sm text-suave">Tudo fica neste computador. Três passos para o primeiro dia:</p>
+          <ol className="mt-4 grid gap-3 sm:grid-cols-3">
+            {[
+              ["Capture", `Em qualquer janela, aperte ${atalhoCaptura}, escreva o pedido e Enter. Leva 3 segundos e você volta ao que estava fazendo.`],
+              ["Planeje", "Aqui em Meu dia, arraste até 3 pedidos para Hoje. É o que importa no dia."],
+              ["Foque", "Clique em Focar: o timer conta as horas por projeto, prontas para o apontamento de sexta."],
+            ].map(([titulo, texto], i) => (
+              <li key={titulo} className="rounded-xl bg-folha px-4 py-3">
+                <p className="flex items-center gap-2 text-[15px] font-semibold">
+                  <b className="flex size-5 items-center justify-center rounded-full bg-destaque text-[11px] text-folha">{i + 1}</b>
+                  {titulo}
+                </p>
+                <p className="mt-1 text-[13px] leading-snug text-suave">{texto}</p>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-3 text-[13px] text-apagado">Ctrl+K busca qualquer coisa, e ! anota o que irritar no uso.</p>
+        </section>
+      )}
+      <div className="-mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <ol aria-label="Fluxo do dia" className="flex flex-1 flex-wrap gap-1.5">
+          {ETAPAS.map((etapa, i) => {
+            const feita = etapaFeita[i];
+            const atual = i === etapaAtual;
+            const conteudo = (
+              <>
+                <b
+                  className={`flex size-5 items-center justify-center rounded-full text-[11px] ${
+                    feita ? "bg-ok text-folha" : atual ? "bg-destaque text-folha" : "bg-folha text-suave"
+                  }`}
+                >
+                  {feita ? "✓" : i + 1}
+                </b>
+                {etapa}
+              </>
+            );
+            const classe = `flex items-center gap-2 rounded-full py-1 pr-3 pl-1 text-[13px] ${
+              feita ? "bg-ok-claro text-ok" : atual ? "bg-destaque-claro font-semibold text-destaque-tinta" : "bg-etiqueta text-suave"
+            }`;
+            return (
+              <li key={etapa}>
+                {i === 3 && !fechado ? (
+                  <button type="button" onClick={abrirFechamento} className={`${classe} ring-1 ring-destaque hover:opacity-90`}>
+                    {conteudo}
+                  </button>
+                ) : (
+                  <span className={classe}>{conteudo}</span>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+        <button
+          type="button"
+          onClick={aoCopiarDaily}
+          title="Copia o que foi feito ontem, o que é para hoje e o que está travado (Ctrl+C)"
+          className="rounded-lg px-3 py-1 text-[13px] font-semibold text-suave hover:bg-etiqueta hover:text-tinta"
+        >
+          Copiar para a daily <kbd className="ml-1 font-sans font-normal text-apagado">Ctrl+C</kbd>
+        </button>
+      </div>
 
       {fechando && (
         <section aria-label="Fechar o dia" className="flex flex-col gap-3 rounded-2xl bg-cartao px-5 py-4 shadow-[0_0_0_1.5px_var(--color-destaque)]">
@@ -403,10 +448,12 @@ export default function MeuDia({
           <p className="px-1 text-[13px] text-suave">As 3 do dia. Clique no "quando" para trocar.</p>
           {quadro.hoje.map((item, i) =>
             item.status === "em_foco" ? (
-              <p key={item.id} className="flex items-center gap-2 rounded-xl border border-dashed border-destaque px-3 py-2 text-[13px] text-destaque-tinta">
+              <p key={item.id} className="flex items-start gap-2 rounded-xl border border-dashed border-destaque px-3 py-2 text-[13px] text-destaque-tinta">
                 <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-destaque-claro text-[11px] font-bold">{i + 1}</span>
-                <span className="min-w-0 flex-1 truncate">{item.titulo}</span>
-                <span className="shrink-0">em foco</span>
+                <span className="min-w-0 flex-1 leading-snug break-words" title={item.titulo}>
+                  {item.titulo}
+                </span>
+                <span className="shrink-0 self-start">em foco</span>
               </p>
             ) : (
               <Cartao key={item.id} item={item} hoje={hoje} arrasto={arrastavel(item)} numero={i + 1}>

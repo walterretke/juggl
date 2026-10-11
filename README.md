@@ -21,6 +21,8 @@ Toda atividade tem título e descrição. Se houver texto selecionado na janela 
 
 O modo padrão é um formulário: título, descrição (Shift+Enter quebra a linha), quem pediu e projeto (com sugestões dos nomes já usados), prioridade e prazo (Hoje, Amanhã ou um calendário). Tab passa de um campo para o outro, as setas escolhem a prioridade e o prazo, e Enter salva de qualquer campo.
 
+As marcações abaixo também valem no título do formulário (`Liberar VPN @carlos >sexta`): o rodapé mostra o que foi reconhecido, e um campo preenchido vence a marcação. Um `#` seguido só de números (`Bug #4821`) fica no título.
+
 `Ctrl+.` troca para o modo avançado, uma linha de título com marcações, mais a descrição embaixo (o modo escolhido fica salvo):
 
 | Marcação | Exemplo | Vira |
@@ -34,7 +36,7 @@ Um link do Teams, Jira, ServiceNow ou Azure DevOps na área de transferência é
 
 ## Triagem
 
-A janela principal tem a tela **Agora** (o item em foco) e duas listas: **Caixa de entrada** (o que foi capturado) e **A fazer** (o que já foi triado, ordenado por prazo e prioridade).
+A janela principal tem a tela **Agora** (o item em foco) e três listas: **Caixa de entrada** (o que foi capturado), **A fazer** (o que já foi triado, ordenado por prazo e prioridade) e **Aguardando** (o que depende da resposta de alguém).
 
 Com o mouse: o círculo conclui; passar o mouse mostra os botões de mover, focar, prioridade, prazo, link e arquivar; clicar no prazo ou na prioridade abre a escolha (com calendário); clicar em quem pediu ou no projeto edita; dois cliques no título renomeiam. Arraste um item para **Agora** (põe em foco), **A fazer** ou **Caixa de entrada** na barra lateral. O aviso de cada ação tem o botão Desfazer.
 
@@ -51,9 +53,23 @@ Pelo teclado:
 | `X` / `E` | concluir / arquivar |
 | `Z` | desfazer |
 | `O` | abrir o link |
+| `W` | aguardando alguém (quem e quando cobrar) |
+| `Ctrl+C` | copiar o status do item, pronto para responder no Teams |
 | `F` | pôr o item em foco |
 | `Tab` | trocar de tela |
 | `C` | capturar |
+
+## Busca
+
+- `Ctrl+K` (ou `/`, ou "Buscar" na barra lateral) busca qualquer pedido pelo título, descrição, quem pediu, projeto ou número do chamado, sem ligar para acentos. Concluídos e arquivados também aparecem.
+- Enter abre o item na lista dele. Um concluído ou arquivado volta para A fazer (`Z` desfaz). `Ctrl+C` copia o status.
+- Sem nada digitado, a mesma janela lista os comandos: ir para uma tela, capturar, copiar a daily, abrir a mini-janela.
+
+## Aguardando alguém
+
+- `W` (ou a ampulheta do item) põe o item em **Aguardando**: diga de quem é a vez (Carlos, fornecedor, equipe de redes) e quando cobrar o retorno (amanhã, em 2 dias, em 1 semana ou outra data).
+- O item sai de A fazer e de Hoje. No dia de cobrar, ele volta sozinho para A fazer com a etiqueta "cobrar Carlos" e o Juggl avisa (regra pronta **Cobrar retorno**, em Regras).
+- Na lista Aguardando, Enter volta o item para A fazer. Focar ou concluir encerra a espera.
 
 ## Foco e timer
 
@@ -63,6 +79,8 @@ Pelo teclado:
 - Trocar de foco pausa o item anterior com a nota de onde parou. Itens pausados voltam para A fazer mostrando essa nota.
 - O tempo fica gravado nos eventos `foco_inicio` e `foco_fim`. Se o app for fechado ou o computador dormir no meio do foco, a sessão é encerrada no último minuto em que o app estava rodando.
 - A bandeja mostra o item em foco e há quanto tempo, com a opção Pausar.
+- A barra lateral mostra o item em foco com o timer e o botão de pausar; clicar abre a tela Agora, e soltar um item ali põe ele em foco.
+- **Mini-janela**: o botão ao lado do timer (ou "Mini-janela" no Agora) abre uma faixa sempre por cima das outras janelas, com o foco, o timer e Pausar. Arraste pela faixa para mudar de lugar.
 - Sem teclado nem mouse por 10 minutos (ajustável em Configurações, 0 desliga), o foco pausa sozinho e o tempo parado não conta. No Linux isso funciona no X11; no Wayland a pausa automática fica desligada.
 
 ## Ritual da manhã
@@ -70,6 +88,8 @@ Pelo teclado:
 - Na primeira abertura do dia, com algo pendente, o Juggl abre o **Ritual da manhã**: o que vence até amanhã (prazo ou promessa), o que alguém cobrou, o que ficou pausado, o resto de A fazer e a caixa de entrada.
 - Escolha até 3 para o dia com clique, arrastando para o quadro Hoje ou com `Espaço` (setas andam). Arraste dentro do Hoje para mudar a ordem. Depois, **Começar o dia** (`Enter`); `Esc` pula. As escolhidas ganham a etiqueta "Do dia" e ficam no topo de A fazer e das próximas do Agora.
 - Dá para pular. Se às 10h o ritual ainda não foi feito, o app lembra uma vez, com um aviso no topo e uma notificação (o horário se muda em Regras).
+- **Copiar para a daily** (`Ctrl+C` em Meu dia) copia o que foi concluído no dia útil anterior (na segunda, a sexta), o que é para hoje e o que está aguardando alguém, pronto para colar na reunião.
+- Com o banco vazio (a primeira vez de um colega), Meu dia mostra três passos: capturar, planejar e focar.
 
 ## Quem está cobrando
 
@@ -119,6 +139,9 @@ Pelo teclado:
 
 - A tela **Horas da semana** soma o tempo em foco por projeto e por dia (segunda a domingo), com `‹` `›` (ou as setas `←` `→`) para trocar de semana. Clicar num projeto mostra os itens.
 - Cada projeto pode ter um código de apontamento (clique em "+ código").
+- **Lançar tempo** (`N`): reunião, atendimento por telefone ou o foco que ficou desligado. Diga o que foi (um item existente ou só uma descrição, como "Reunião de planejamento"), o projeto, o dia e a duração (`1h30`, `45min`, `1:30` ou `1,5`).
+- Clique no tempo de um dia para ver as sessões dele: mude o início e o fim, passe a sessão para outro item (**Mover**) ou apague.
+- Embaixo da tabela, escolha o formato de Copiar e do CSV: a tabela da semana (projetos × dias) ou uma linha por dia e projeto (Data, Código, Projeto, Horas), e se arredonda para 15 ou 30 minutos. A escolha fica salva.
 - **Copiar** (`Ctrl+C`) põe a tabela na área de transferência, pronta para colar numa planilha. **Exportar CSV** (`Ctrl+S`) grava `juggl-horas-AAAA-MM-DD.csv` em Downloads (separado por `;`, abre direto no Excel). Os dois usam horas decimais: 1,50 é uma hora e meia.
 
 ## Bandeja, configurações e backup
@@ -127,6 +150,8 @@ Pelo teclado:
 - Abrir o Juggl de novo só traz a janela existente. `juggl --captura` abre direto a captura (útil no Linux com Wayland: ligue esse comando a um atalho do sistema).
 - `,` abre as configurações: tema (igual ao sistema, claro ou escuro), atalho da captura, uso do texto selecionado, minutos até a pausa por inatividade, prioridades (renomear, cor, ordem, criar e remover) e backup na hora.
 - Todo dia uma cópia do banco vai para a subpasta `backups/`, guardando as 7 mais recentes.
+- **Restaurar…** (em Configurações, Backup) volta o banco para um desses backups. Antes, o Juggl guarda o estado atual como um backup "antes de restaurar". Backups de uma versão anterior também servem.
+- **Itens recorrentes** (em Configurações): tarefas que voltam todo dia útil, toda semana ou todo mês. No dia, o item aparece na caixa de entrada; se o app ficou fechado, entra um só.
 
 ## Testes
 

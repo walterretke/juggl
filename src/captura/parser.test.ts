@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { interpretarPrazo, nomeParaMarcacao, normalizarNome, parseCaptura } from "./parser";
+import { interpretarPrazo, nomeParaMarcacao, normalizarNome, marcacoesDoTitulo, parseCaptura } from "./parser";
 
 // Quinta-feira, 8 de outubro de 2026, 14h (hora local).
 const HOJE = new Date(2026, 9, 8, 14, 0);
@@ -138,5 +138,21 @@ describe("nomes com espaço", () => {
     const c = parseCaptura(`x @${nomeParaMarcacao("Carla Dias")}`, HOJE);
     expect(c.pessoa).toBe("Carla_Dias");
     expect(c.titulo).toBe("x");
+  });
+});
+
+describe("marcacoesDoTitulo", () => {
+  const hoje = new Date(2026, 9, 9, 10);
+  it("tira as marcações do título do formulário", () => {
+    const c = marcacoesDoTitulo("Liberar VPN @carlos #infra !alta >amanha", hoje);
+    expect(c).toMatchObject({ titulo: "Liberar VPN", pessoa: "carlos", projeto: "infra", prioridade: "alta", prazo: "2026-10-10" });
+  });
+  it("mantém número de chamado com #", () => {
+    const c = marcacoesDoTitulo("Bug #4821: filtro de data #portal", hoje);
+    expect(c.titulo).toBe("Bug #4821: filtro de data");
+    expect(c.projeto).toBe("portal");
+  });
+  it("título sem marcações não muda", () => {
+    expect(marcacoesDoTitulo("Responder dúvida sobre VPN", hoje)).toMatchObject({ titulo: "Responder dúvida sobre VPN", pessoa: null });
   });
 });

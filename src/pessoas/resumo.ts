@@ -32,14 +32,28 @@ function dataCurta(iso: string): string {
  * com o status e a data prometida. Os concluídos vêm por último.
  */
 export function resumoParaPessoa(nome: string, itens: Item[], hoje: Date): string {
-  const linhas = itens.map((item) => {
-    let linha = `- ${item.titulo}: ${FRASE_STATUS[item.status]}`;
-    if (item.status === "feito") linha += ` em ${dataCurta(item.atualizado_em)}`;
-    else if (item.prometido_para) {
-      const quando = descreverPrazo(item.prometido_para, hoje);
-      linha += `, previsto para ${quando.startsWith("atrasado") ? dataCurta(item.prometido_para) : quando}`;
-    }
-    return linha;
-  });
+  const linhas = itens.map((item) => `- ${linhaDeStatus(item, hoje)}`);
   return [`${nome}, segue como estão seus pedidos:`, ...linhas].join("\n");
+}
+
+/** "Relatório de acessos: fazendo agora, previsto para hoje" (sem o traço da lista). */
+function linhaDeStatus(item: Item, hoje: Date): string {
+  let frase = FRASE_STATUS[item.status];
+  if (item.status === "aguardando" && item.aguardando_quem) frase = `aguardando retorno de ${item.aguardando_quem}`;
+  let linha = `${item.titulo}: ${frase}`;
+  if (item.status === "feito") linha += ` em ${dataCurta(item.atualizado_em)}`;
+  else if (item.prometido_para) {
+    const quando = descreverPrazo(item.prometido_para, hoje);
+    linha += `, previsto para ${quando.startsWith("atrasado") ? dataCurta(item.prometido_para) : quando}`;
+  }
+  return linha;
+}
+
+/**
+ * Uma linha para responder quem cobrou, no Teams: "Oi, Carlos! Relatório de acessos:
+ * fazendo agora, previsto para hoje." Sem quem pediu, só o status.
+ */
+export function statusParaResponder(item: Item, hoje: Date): string {
+  const linha = `${linhaDeStatus(item, hoje)}.`;
+  return item.pessoa ? `Oi, ${item.pessoa.replace(/_/g, " ")}! ${linha}` : linha;
 }
