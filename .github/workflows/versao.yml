@@ -1,0 +1,47 @@
+name: Publicar versão
+
+# Gera o instalador do Windows e publica uma versão no GitHub, com o latest.json
+# que o Juggl consulta para se atualizar sozinho. Dispare criando uma tag v0.2.0
+# (a versão do tauri.conf.json precisa ser a mesma) ou pelo botão "Run workflow".
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      - run: npm test
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Chave que assina as atualizações (Settings > Secrets and variables > Actions).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          tagName: v__VERSION__
+          releaseName: Juggl __VERSION__
+          releaseBody: Baixe o instalador .msi (ou o -setup.exe) abaixo. Quem já tem o Juggl recebe a atualização dentro do app.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true

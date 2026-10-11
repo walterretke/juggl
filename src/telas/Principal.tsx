@@ -37,6 +37,11 @@ import { notificar } from "../regras/notificar";
 import type { Urgencia } from "../regras/urgencia";
 import { adiarAlertas, continuarApesarDoAlerta, pontuacoesAgora, verificarPrioridade, type AlertaComFoco } from "../db/detector";
 import AlertaPrioridade from "./AlertaPrioridade";
+import AnotarIrritacao from "./AnotarIrritacao";
+import Uso from "./Uso";
+import { anotarIrritacao, registrarDiaDeUso } from "../db/uso";
+import type { Update } from "@tauri-apps/plugin-updater";
+import { instalarAtualizacao, INTERVALO_ATUALIZACAO_MS, procurarAtualizacao } from "../atualizacao";
 import { horaDeSincronizar, lerConfigDevops, sincronizarDevops } from "../db/devops";
 import Agora from "./Agora";
 import Configuracoes from "./Configuracoes";
@@ -52,8 +57,8 @@ const MINUTO_MS = 60 * 1000;
 const MAX_DESFAZER = 30;
 
 /** Telas da janela principal: Agora (o foco), o ritual, as duas listas, Pessoas e Horas. */
-type Tela = "agora" | "ritual" | Lista | "pessoas" | "horas" | "regras";
-const TELAS: Tela[] = ["agora", "ritual", "inbox", "a_fazer", "pessoas", "horas", "regras"];
+type Tela = "agora" | "ritual" | Lista | "pessoas" | "horas" | "regras" | "uso";
+const TELAS: Tela[] = ["agora", "ritual", "inbox", "a_fazer", "pessoas", "horas", "regras", "uso"];
 const NOME_TELA: Record<Tela, string> = {
   agora: "Agora",
   ritual: "Ritual da manhã",
@@ -62,6 +67,7 @@ const NOME_TELA: Record<Tela, string> = {
   pessoas: "Pessoas",
   horas: "Horas da semana",
   regras: "Regras",
+  uso: "Uso",
 };
 
 function ehLista(tela: Tela): tela is Lista {
@@ -144,6 +150,10 @@ export default function Principal() {
   /** Azure DevOps configurado: mostra o botão de sincronizar na caixa de entrada. */
   const [devopsAtivo, setDevopsAtivo] = useState(false);
   const [sincronizando, setSincronizando] = useState(false);
+  /** Versão nova publicada no GitHub, esperando você instalar. */
+  const [atualizacao, setAtualizacao] = useState<Update | null>(null);
+  const [instalando, setInstalando] = useState(false);
+  const [anotando, setAnotando] = useState(false);
   /** Pontuação de cada item quando o foco atual começou, para ver quem passou à frente. */
   const pontosDoInicio = useRef<Map<string, Urgencia> | null>(null);
   const desfazer = useRef<Alteracao[]>([]);
@@ -225,6 +235,7 @@ export default function Principal() {
   useEffect(() => {
     if (!pronto) return;
     const rodar = () => {
+      registrarDiaDeUso().catch(() => {});
       verificarRegras()
         .then((marcados) => {
           if (marcados > 0) return carregarAtual.current();
@@ -267,6 +278,28 @@ export default function Principal() {
   }, [foco?.item.id, foco?.inicio]);
 
   useEffect(() => agendarBackupDiario((e) => setErro(`Backup diário falhou: ${e}`)), []);
+
+  // Atualização automática: procura ao abrir e a cada 6 horas. Sem internet, tenta de novo depois.
+  useEffect(() => {
+    const procurar = () =>
+      procurarAtualizacao()
+        .then((a) => a && setAtualizacao(a))
+        .catch((e) => console.warn("Atualização:", e));
+    procurar();
+    const relogio = setInterval(procurar, INTERVALO_ATUALIZACAO_MS);
+    return () => clearInterval(relogio);
+  }, []);
+
+  async function instalar() {
+    if (!atualizacao || instalando) return;
+    setInstalando(true);
+    try {
+      await instalarAtualizacao(atualizacao);
+    } catch (e) {
+      setInstalando(false);
+      mostrarAviso(`Não consegui atualizar: ${e}`);
+    }
+  }
 
   // Fecha a sessão de foco que ficou aberta se o app foi fechado no meio dela.
   useEffect(() => {
@@ -511,7 +544,7 @@ export default function Principal() {
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
       // # e @ podem vir com AltGr (Ctrl+Alt no Windows) em alguns teclados.
-      if (edicao || configAberta || pedidoNota || menu || ((e.ctrlKey || e.metaKey || e.altKey) && e.key !== "#" && e.key !== "@")) return;
+      if (edicao || configAberta || pedidoNota || menu || anotando || ((e.ctrlKey || e.metaKey || e.altKey) && e.key !== "#" && e.key !== "@")) return;
       // Digitando num campo (busca, código do projeto): as letras são texto, não atalhos.
       if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select")) return;
       const item = itens?.[selecionado];
@@ -527,6 +560,8 @@ export default function Principal() {
         c: () => invoke("abrir_captura"),
         ",": () => setConfigAberta(true),
         z: () => desfazerUltima(),
+        i: () => atualizacao && instalar(),
+        "!": () => setAnotando(true),
         s: () =>
           lerConfigDevops().then((cfg) =>
             cfg.organizacao ? sincronizarAzureAgora(true).catch(() => {}) : mostrarAviso("Configure o Azure DevOps em Configurações (,)."),
@@ -572,7 +607,7 @@ export default function Principal() {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [edicao, configAberta, pedidoNota, menu, itens, selecionado, lista, aplicar, foco, proximas, prioridades]);
+  }, [edicao, configAberta, pedidoNota, menu, anotando, itens, selecionado, lista, aplicar, foco, proximas, prioridades, atualizacao]);
 
   // Mantém o item selecionado visível ao navegar pelo teclado.
   useEffect(() => {
@@ -588,6 +623,8 @@ export default function Principal() {
       ? "Tempo em foco por projeto e por dia, pronto para o apontamento."
       : lista === "regras"
       ? "Poucos avisos e certeiros. Ligue, desligue e ajuste cada regra."
+      : lista === "uso"
+      ? "As 4 semanas de uso real: como está indo e o que irrita."
       : lista === "ritual"
       ? "O que vence, quem cobrou e o que ficou pausado. Escolha até 3 para hoje."
       : lista === "pessoas"
@@ -727,6 +764,14 @@ export default function Principal() {
           </button>
         )}
         <div className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setAnotando(true)}
+          title="Anotar algo que atrapalhou, para corrigir depois"
+          className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-suave hover:bg-folha hover:text-tinta"
+        >
+          Anotar o que irrita <kbd className="font-sans text-xs text-apagado">!</kbd>
+        </button>
         {botaoCapturar}
         <button
           type="button"
@@ -773,6 +818,27 @@ export default function Principal() {
             </p>
           )}
           {erro && <p className="mb-5 rounded-xl bg-atraso-claro px-4 py-3 text-sm text-atraso">Erro no banco: {erro}</p>}
+
+          {atualizacao && (
+            <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl bg-destaque-claro px-4 py-3 text-sm text-destaque-tinta">
+              <span className="flex-1 font-semibold">
+                {instalando ? `Baixando a versão ${atualizacao.version}…` : `Versão ${atualizacao.version} do Juggl disponível.`}
+              </span>
+              <button
+                type="button"
+                disabled={instalando}
+                onClick={instalar}
+                className="rounded-md bg-destaque px-3 py-1 font-semibold text-folha hover:opacity-90 disabled:opacity-60"
+              >
+                Instalar e reiniciar <kbd className="ml-1 font-sans font-normal opacity-70">I</kbd>
+              </button>
+              {!instalando && (
+                <button type="button" onClick={() => setAtualizacao(null)} className="rounded-md px-2 py-1 hover:bg-folha/50">
+                  Depois
+                </button>
+              )}
+            </div>
+          )}
 
           {lembreteRitual && lista !== "ritual" && (
             <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl bg-destaque-claro px-4 py-3 text-sm text-destaque-tinta">
@@ -849,6 +915,7 @@ export default function Principal() {
           )}
 
           {lista === "regras" && <Regras aoAvisar={mostrarAviso} />}
+          {lista === "uso" && <Uso versao={versao} aoAvisar={mostrarAviso} aoAnotar={() => setAnotando(true)} />}
 
           {lista === "horas" && <Horas versao={`${foco?.item.id}-${foco?.inicio}`} aoAvisar={mostrarAviso} />}
 
@@ -974,6 +1041,15 @@ export default function Principal() {
                 <Dica teclas="P">alerta de prioridade</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
               </>
+            ) : lista === "uso" ? (
+              <>
+                <Dica teclas="!">anotar o que irrita</Dica>
+                <Dica teclas="↑ ↓">escolher</Dica>
+                <Dica teclas="Espaço">resolvida</Dica>
+                <Dica teclas="Delete">apagar</Dica>
+                <Dica teclas="Ctrl+C">copiar a lista</Dica>
+                <Dica teclas="Tab">trocar tela</Dica>
+              </>
             ) : lista === "ritual" ? (
               <>
                 <Dica teclas="↑ ↓">andar</Dica>
@@ -1024,6 +1100,21 @@ export default function Principal() {
         </footer>
       </div>
 
+      {anotando && (
+        <AnotarIrritacao
+          tela={NOME_TELA[lista]}
+          aoCancelar={() => setAnotando(false)}
+          aoSalvar={(texto) => {
+            setAnotando(false);
+            anotarIrritacao(texto, NOME_TELA[lista])
+              .then(() => {
+                mostrarAviso("Anotado. A lista fica na tela Uso.");
+                setVersao((v) => v + 1);
+              })
+              .catch((e) => setErro(String(e)));
+          }}
+        />
+      )}
       {pedidoNota && (
         <PedidoNota
           titulo={pedidoNota.titulo}
@@ -1040,6 +1131,13 @@ export default function Principal() {
           atalho={atalho}
           aoMudarAtalho={setAtalho}
           aoSincronizarDevops={() => sincronizarAzureAgora(true)}
+          aoProcurarAtualizacao={async () => {
+            if (import.meta.env.DEV) return "Rodando pelo código (npm run tauri dev): atualize com git pull.";
+            const nova = await procurarAtualizacao();
+            if (!nova) return "Você está na versão mais recente.";
+            setAtualizacao(nova);
+            return `Versão ${nova.version} disponível: use o aviso no topo da tela.`;
+          }}
           aoFechar={() => {
             setConfigAberta(false);
             carregar();

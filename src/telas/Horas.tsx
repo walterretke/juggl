@@ -1,9 +1,10 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { dataLocalIso } from "../captura/datas";
 import { definirCodigoApontamento, listarSessoes } from "../db/horas";
+import { registrarApontamento } from "../db/uso";
 import {
   horasMinutos,
   inicioDaSemana,
@@ -39,6 +40,8 @@ export default function Horas({ versao, aoAvisar }: Props) {
   const [abertos, setAbertos] = useState<Set<string>>(new Set());
   const [erro, setErro] = useState<string | null>(null);
   const [editandoCodigo, setEditandoCodigo] = useState<string | null>(null);
+  /** Quando a tela abriu: mede quanto o apontamento leva (até copiar ou exportar). */
+  const aberturaRef = useRef(Date.now());
 
   const carregar = useCallback(async () => {
     try {
@@ -63,6 +66,7 @@ export default function Horas({ versao, aoAvisar }: Props) {
   async function copiar() {
     if (!resumo || resumo.total === 0) return;
     await writeText(tabelaSemana(resumo, "\t"));
+    medirApontamento();
     aoAvisar("Tabela copiada. Cole numa planilha ou no sistema de apontamento.");
   }
 
@@ -75,10 +79,15 @@ export default function Horas({ versao, aoAvisar }: Props) {
         conteudo: `﻿${tabelaSemana(resumo, ";")}`,
       });
       aoAvisar(`CSV salvo em ${caminho}`);
+      medirApontamento();
       await revealItemInDir(caminho).catch(() => {});
     } catch (e) {
       setErro(String(e));
     }
+  }
+
+  function medirApontamento() {
+    registrarApontamento(dataLocalIso(segunda), Date.now() - aberturaRef.current).catch(() => {});
   }
 
   async function salvarCodigo(projetoId: string, codigo: string) {

@@ -45,6 +45,11 @@ export async function salvarRitual(escolhidos: string[], hoje = new Date()): Pro
     );
   }
   await gravarConfig(CHAVE_FEITO, dia);
+  await db.execute(
+    `INSERT INTO dia_de_uso (dia, aberto_em, ritual) VALUES ($1, $2, 1)
+     ON CONFLICT (dia) DO UPDATE SET ritual = 1`,
+    [dia, hoje.toISOString()],
+  );
 }
 
 export async function ritualFeitoHoje(hoje = new Date()): Promise<boolean> {

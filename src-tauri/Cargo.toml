@@ -33,6 +33,8 @@ tauri-plugin-notification = "2"
 reqwest = { version = "0.13", default-features = false, features = ["native-tls", "json", "system-proxy", "charset", "http2"] }
 base64 = "0.22"
 keyring = { version = "3.6", features = ["windows-native", "apple-native", "sync-secret-service", "crypto-rust"] }
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 
 # Tempo sem usar o computador, para pausar o foco sozinho (src/ocioso.rs).

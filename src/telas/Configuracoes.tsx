@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { backupAgora, listarBackups } from "../db/backup";
 import { gravarConfig, lerConfig } from "../db/config";
@@ -14,10 +15,14 @@ interface Props {
   atalho: string;
   aoMudarAtalho: (atalho: string) => void;
   aoSincronizarDevops: () => Promise<void>;
+  /** Procura versão nova; devolve a mensagem para mostrar. */
+  aoProcurarAtualizacao: () => Promise<string>;
   aoFechar: () => void;
 }
 
-export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevops, aoFechar }: Props) {
+export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevops, aoProcurarAtualizacao, aoFechar }: Props) {
+  const [versao, setVersao] = useState("");
+  const [mensagemVersao, setMensagemVersao] = useState<string | null>(null);
   const [gravando, setGravando] = useState(false);
   const [novoAtalho, setNovoAtalho] = useState<string | null>(null);
   const [mensagemAtalho, setMensagemAtalho] = useState<{ ok: boolean; texto: string } | null>(null);
@@ -29,6 +34,7 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevo
 
   useEffect(() => {
     lerTema().then(setTema);
+    getVersion().then(setVersao);
     lerConfig("usar_selecao").then((v) => setUsarSelecao(v !== "nao"));
     lerLimiteInatividade().then((m) => setInatividade(String(m)));
   }, []);
@@ -219,6 +225,24 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevo
           </button>
         </div>
         {mensagemBackup && <p className="mt-2 text-sm text-suave">{mensagemBackup}</p>}
+
+        <h3 className="mt-7 text-[15px] font-semibold">Versão</h3>
+        <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
+          <span>Juggl {versao}</span>
+          <button
+            type="button"
+            onClick={() =>
+              aoProcurarAtualizacao()
+                .then(setMensagemVersao)
+                .catch((e) => setMensagemVersao(`Não consegui procurar: ${e}`))
+            }
+            className="rounded-lg border border-linha px-3.5 py-2 text-sm hover:bg-etiqueta"
+          >
+            Procurar atualização
+          </button>
+        </div>
+        {mensagemVersao && <p className="mt-2 text-sm text-suave">{mensagemVersao}</p>}
+        <p className="mt-1 text-sm text-suave">O Juggl procura sozinho ao abrir e a cada 6 horas.</p>
 
         <p className="mt-6 border-t border-linha pt-4 text-sm text-suave">
           Fechar a janela deixa o Juggl na bandeja do sistema, com o atalho ativo. Para sair, use Sair no ícone da bandeja.

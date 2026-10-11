@@ -31,7 +31,8 @@ jobs:
       - run: cargo test --lib
         working-directory: src-tauri
 
-      - run: npm run tauri build
+      # Build de conferência: sem assinar atualização (a chave só existe no workflow de versão).
+      - run: npm run tauri build -- --config src-tauri/tauri.ci.conf.json
 
       - uses: actions/upload-artifact@v4
         with:
