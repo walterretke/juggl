@@ -28,7 +28,7 @@ const PRONTAS: Record<IdPronta, { antes: string; depois: string; campo: "horas" 
   prazo_chegando: { antes: "Item vence em menos de", depois: "horas (prazo conta até as 18h) e não está em foco.", campo: "horas" },
   promessa_esquecida: { antes: "Item prometido a alguém está parado há", depois: "dias ou mais.", campo: "dias" },
   inbox_acumulando: { antes: "A caixa de entrada passou de", depois: "itens sem triagem.", campo: "itens" },
-  ritual_pendente: { antes: "O ritual da manhã não foi feito até", depois: ".", campo: "hora" },
+  ritual_pendente: { antes: "O dia não foi planejado até", depois: ".", campo: "hora" },
   foco_esquecido: { antes: "O timer está rodando há mais de", depois: "horas no mesmo item.", campo: "horas" },
   fim_do_dia: { antes: "Resumo do que foi feito e do que vence amanhã, às", depois: "(dias úteis).", campo: "hora" },
 };

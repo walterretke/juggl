@@ -5,6 +5,8 @@ import { agoraIso, novoId } from "./ids";
 
 export type Status = "inbox" | "a_fazer" | "em_foco" | "pausado" | "aguardando" | "feito" | "arquivado";
 export type Lista = "inbox" | "a_fazer";
+/** Momento do dia para um item de Hoje: um "quando" leve, que não quebra com interrupções. */
+export type Quando = "manha" | "depois_daily" | "tarde" | "fim_dia";
 
 export interface Item {
   id: string;
@@ -18,8 +20,10 @@ export interface Item {
   prazo: string | null;
   /** Data que você prometeu para quem pediu (pode ser diferente do prazo). */
   prometido_para: string | null;
-  /** Dia em que o item foi escolhido no ritual da manhã como uma das 3 do dia. */
+  /** Dia em que o item foi escolhido como uma das 3 do dia (Planejar o dia). */
   dia_planejado: string | null;
+  /** Momento aproximado em que vai ser feito no dia planejado. */
+  quando: Quando | null;
   link: string | null;
   origem: string;
   id_externo: string | null;
@@ -40,7 +44,7 @@ export interface Item {
 
 /** Campos que a triagem pode mudar. */
 export type Mudancas = Partial<
-  Pick<Item, "titulo" | "nota" | "status" | "prioridade_id" | "prazo" | "prometido_para" | "dia_planejado" | "pessoa_id" | "projeto_id">
+  Pick<Item, "titulo" | "nota" | "status" | "prioridade_id" | "prazo" | "prometido_para" | "dia_planejado" | "quando" | "pessoa_id" | "projeto_id">
 >;
 
 /** O que é preciso para desfazer uma mudança: os valores anteriores e os eventos gravados. */
@@ -116,7 +120,7 @@ export async function criarItem(captura: Captura, duracaoMs: number | null, desc
 const ORDEM: Record<Lista, string> = {
   // Caixa de entrada: mais antigos primeiro, para nada ficar esquecido no fundo.
   inbox: "item.criado_em",
-  // A fazer: as 3 do dia (ritual) primeiro; depois prazo mais próximo (sem prazo no fim),
+  // A fazer: as 3 do dia primeiro; depois prazo mais próximo (sem prazo no fim),
   // prioridade e quem cobrou mais.
   a_fazer: `item.dia_planejado IS NOT date('now', 'localtime'),
             item.prazo IS NULL, item.prazo,
@@ -134,6 +138,7 @@ const STATUS_DA_LISTA: Record<Lista, string> = {
 export const SELECT_ITEM = `
   SELECT item.id, item.titulo, item.nota, item.status, item.prioridade_id, prioridade.nome AS prioridade,
          prioridade.cor AS prioridade_cor, item.prazo, item.prometido_para, item.dia_planejado,
+         item.quando,
          item.link, item.origem,
          item.id_externo, item.criado_em, item.atualizado_em, item.pessoa_id, item.projeto_id,
          pessoa.apelido AS pessoa, projeto.nome AS projeto,
@@ -173,6 +178,7 @@ const CAMPOS_EDITAVEIS = [
   "prazo",
   "prometido_para",
   "dia_planejado",
+  "quando",
   "pessoa_id",
   "projeto_id",
 ] as const;
@@ -182,11 +188,13 @@ export async function gravarCampos(id: string, campos: Mudancas): Promise<void> 
   if (nomes.length === 0) return;
   const db = await getDb();
   const sets = nomes.map((c, i) => `${c} = $${i + 1}`).join(", ");
-  await db.execute(`UPDATE item SET ${sets}, atualizado_em = $${nomes.length + 1} WHERE id = $${nomes.length + 2}`, [
-    ...nomes.map((c) => campos[c] ?? null),
-    agoraIso(),
-    id,
-  ]);
+  // Planejar (escolher para hoje, trocar o "quando") não conta como mexer no item:
+  // `atualizado_em` (o "parado há" da urgência) fica igual.
+  const soPlano = nomes.every((c) => c === "dia_planejado" || c === "quando");
+  await db.execute(
+    `UPDATE item SET ${sets}, atualizado_em = ${soPlano ? "atualizado_em" : `$${nomes.length + 1}`} WHERE id = $${nomes.length + 2}`,
+    [...nomes.map((c) => campos[c] ?? null), agoraIso(), id],
+  );
 }
 
 export async function registrarEvento(itemId: string, tipo: string, dados: unknown, quando = agoraIso()): Promise<string> {

@@ -103,7 +103,7 @@ export default function Uso({ versao, aoAvisar, aoAnotar }: Props) {
           situacao={!periodo.metaPossivel ? "atencao" : periodo.decorridos > 0 && periodo.usados === periodo.decorridos ? "ok" : "neutro"}
         />
         <Criterio
-          titulo="Ritual da manhã feito"
+          titulo="Dia planejado"
           valor={`${periodo.rituais} de ${periodo.decorridos}`}
           meta="Meta: na maioria dos dias."
           situacao={periodo.decorridos === 0 ? "neutro" : periodo.rituais * 2 > periodo.decorridos ? "ok" : "atencao"}

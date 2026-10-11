@@ -137,8 +137,8 @@ const PRONTAS: Record<IdPronta, Avaliador> = {
       {
         itemId: null,
         chave: `ritual_pendente:${dataLocalIso(agora)}`,
-        titulo: "Ritual da manhã pendente",
-        corpo: "Escolha as 3 prioridades do dia. Leva uns 5 minutos.",
+        titulo: "Dia ainda não planejado",
+        corpo: "Abra Meu dia e escolha as 3 de hoje. Leva uns 5 minutos.",
       },
     ];
   },

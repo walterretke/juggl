@@ -59,7 +59,7 @@ function pontosDeData(iso: string, agora: Date, promessa: boolean): Omit<Parte, 
 
 /**
  * Pontuação de urgência, com regras transparentes:
- * prazo (ou promessa, o que pesar mais) + cobranças + dias parado + prioridade + escolhido no ritual.
+ * prazo (ou promessa, o que pesar mais) + cobranças + dias parado + prioridade + escolhido para hoje.
  * `pontosPrioridade` vem de `pontosDasPrioridades`.
  */
 export function pontuar(item: Item, agora: Date, pontosPrioridade: Map<string, number>): Urgencia {
