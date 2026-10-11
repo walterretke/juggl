@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { backupAgora, listarBackups } from "../db/backup";
+import { backupAgora, listarBackups, restaurarBackup } from "../db/backup";
 import { gravarConfig, lerConfig } from "../db/config";
 import { atalhoDoEvento } from "./atalho";
 import EditorPrioridades from "./EditorPrioridades";
 import SecaoDevops from "./SecaoDevops";
+import SecaoRecorrentes from "./SecaoRecorrentes";
 import { CHAVE_INATIVIDADE, lerLimiteInatividade } from "../db/foco";
 import { rotuloAtalho } from "./origens";
 import { escolherTema, lerTema, NOME_TEMA, type Tema } from "../tema";
@@ -28,6 +29,9 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevo
   const [mensagemAtalho, setMensagemAtalho] = useState<{ ok: boolean; texto: string } | null>(null);
   const [backups, setBackups] = useState<string[]>([]);
   const [mensagemBackup, setMensagemBackup] = useState<string | null>(null);
+  /** Backup escolhido para restaurar, esperando a confirmação. */
+  const [restaurando, setRestaurando] = useState<string | null>(null);
+  const [verBackups, setVerBackups] = useState(false);
   const [tema, setTema] = useState<Tema | null>(null);
   const [usarSelecao, setUsarSelecao] = useState(true);
   const [inatividade, setInatividade] = useState("");
@@ -82,6 +86,22 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevo
       setMensagemBackup("Backup feito.");
     } catch (e) {
       setMensagemBackup(`Falhou: ${e}`);
+    }
+  }
+
+  async function restaurar(caminho: string) {
+    if (restaurando !== caminho) {
+      setRestaurando(caminho);
+      return;
+    }
+    try {
+      setMensagemBackup("Restaurando…");
+      await restaurarBackup(caminho);
+      // Tudo na tela veio do banco antigo: recarrega a janela inteira.
+      window.location.reload();
+    } catch (e) {
+      setRestaurando(null);
+      setMensagemBackup(`Não consegui restaurar: ${e}`);
     }
   }
 
@@ -199,6 +219,9 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevo
         <h3 className="mt-7 text-[15px] font-semibold">Azure DevOps</h3>
         <SecaoDevops aoSincronizar={aoSincronizarDevops} />
 
+        <h3 className="mt-7 text-[15px] font-semibold">Itens recorrentes</h3>
+        <SecaoRecorrentes />
+
         <h3 className="mt-7 text-[15px] font-semibold">Prioridades</h3>
         <EditorPrioridades />
 
@@ -223,7 +246,41 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevo
           >
             Mostrar na pasta
           </button>
+          <button
+            type="button"
+            disabled={!backups[0]}
+            aria-expanded={verBackups}
+            onClick={() => setVerBackups(!verBackups)}
+            className="rounded-lg border border-linha px-3.5 py-2 text-sm hover:bg-etiqueta disabled:opacity-40"
+          >
+            Restaurar…
+          </button>
         </div>
+        {verBackups && (
+          <ul className="mt-2 flex flex-col gap-1">
+            {backups.map((caminho) => {
+              const nome = caminho.split(/[\\/]/).pop() ?? caminho;
+              return (
+                <li key={caminho} className="flex items-center gap-2 rounded-lg bg-cartao px-3 py-1.5 text-sm">
+                  <span className="min-w-0 flex-1 truncate tabular-nums">{nome.replace(/^juggl-/, "").replace(/\.db$/, "")}</span>
+                  <button
+                    type="button"
+                    onClick={() => restaurar(caminho)}
+                    onBlur={() => setRestaurando((r) => (r === caminho ? null : r))}
+                    className={`rounded-md px-2.5 py-0.5 text-[13px] font-semibold ${
+                      restaurando === caminho ? "bg-atraso-claro text-atraso" : "text-suave hover:bg-etiqueta hover:text-tinta"
+                    }`}
+                  >
+                    {restaurando === caminho ? "Trocar os dados atuais por este?" : "Restaurar"}
+                  </button>
+                </li>
+              );
+            })}
+            <li className="px-1 text-xs text-apagado">
+              Antes de restaurar, o Juggl guarda o estado atual como um backup "antes de restaurar", para dar para voltar.
+            </li>
+          </ul>
+        )}
         {mensagemBackup && <p className="mt-2 text-sm text-suave">{mensagemBackup}</p>}
 
         <h3 className="mt-7 text-[15px] font-semibold">Versão</h3>

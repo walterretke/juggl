@@ -18,6 +18,7 @@ interface Props {
   aoCobrar: () => void;
   aoPlanejar: () => void;
   aoMudarNota: (nota: string | null) => void;
+  aoAbrirMini: () => void;
 }
 
 /** Tela "Agora": uma única coisa em destaque, o timer e as 3 de hoje (ou sugestões, sem plano). */
@@ -32,6 +33,7 @@ export default function Agora({
   aoCobrar,
   aoPlanejar,
   aoMudarNota,
+  aoAbrirMini,
 }: Props) {
   const [agora, setAgora] = useState(() => Date.now());
   /** Texto da descrição sendo editado (null: não está editando). */
@@ -148,6 +150,14 @@ export default function Agora({
               className="rounded-lg px-4 py-2 text-sm text-suave hover:bg-etiqueta hover:text-tinta"
             >
               Cobrou de novo <kbd className="ml-1 font-sans font-normal text-apagado">B</kbd>
+            </button>
+            <button
+              type="button"
+              onClick={aoAbrirMini}
+              title="Uma faixa sempre por cima das outras janelas, com o foco e o timer"
+              className="rounded-lg px-4 py-2 text-sm text-suave hover:bg-etiqueta hover:text-tinta"
+            >
+              Mini-janela
             </button>
           </div>
         </section>

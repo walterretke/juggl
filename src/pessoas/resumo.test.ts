@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { item } from "../teste/item";
-import { resumoParaPessoa } from "./resumo";
+import { resumoParaPessoa, statusParaResponder } from "./resumo";
 
 describe("resumoParaPessoa", () => {
   it("lista cada pedido com status e data prometida", () => {
@@ -22,6 +22,20 @@ describe("resumoParaPessoa", () => {
         "- Liberar VPN: anotado, ainda não comecei",
         "- Ajustar deploy: concluído em 08/10",
       ].join("\n"),
+    );
+  });
+});
+
+describe("statusParaResponder", () => {
+  const hoje = new Date(2026, 9, 9, 9);
+  it("cumprimenta quem pediu e diz o status com a previsão", () => {
+    expect(statusParaResponder(item("Relatório", { pessoa: "Carla_Dias", status: "pausado", prometido_para: "2026-10-09" }), hoje)).toBe(
+      "Oi, Carla Dias! Relatório: comecei, está pausado, previsto para hoje.",
+    );
+  });
+  it("diz de quem está esperando retorno", () => {
+    expect(statusParaResponder(item("VPN", { status: "aguardando", aguardando_quem: "redes" }), hoje)).toBe(
+      "VPN: aguardando retorno de redes.",
     );
   });
 });

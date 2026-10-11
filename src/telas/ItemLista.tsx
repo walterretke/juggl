@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { dataLocalIso, descreverPrazo, formatarDuracao, tempoParado } from "../captura/datas";
 import type { Item, Lista } from "../db/itens";
 import type { Prioridade } from "../db/prioridades";
@@ -6,7 +7,7 @@ import { BOLINHA_PRIORIDADE, ETIQUETA_PRIORIDADE } from "./cores";
 import Icone, { type NomeIcone } from "./Icone";
 import { COR_ORIGEM, NOME_ORIGEM } from "./origens";
 
-export type Menu = "prazo" | "prometido" | "prioridade";
+export type Menu = "prazo" | "prometido" | "prioridade" | "aguardando";
 export type CampoEditavel = "prazo" | "projeto" | "pessoa" | "titulo" | "nota";
 
 export interface AcoesItem {
@@ -21,6 +22,10 @@ export interface AcoesItem {
   definirPrometido: (data: string | null) => void;
   cobrar: () => void;
   definirPrioridade: (id: string | null) => void;
+  /** Põe em Aguardando: de quem é a vez e quando cobrar o retorno. */
+  aguardar: (quem: string | null, ate: string | null) => void;
+  /** Copia uma linha com o status, pronta para responder no Teams. */
+  copiarStatus: () => void;
   abrirMenu: (menu: Menu | null) => void;
 }
 
@@ -100,6 +105,7 @@ export default function ItemLista({ item, indice, ativo, lista, agora, prioridad
   const promessa = item.prometido_para ? descreverPrazo(item.prometido_para, agora) : null;
   const hoje = dataLocalIso(agora);
   const amanha = dataLocalIso(new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() + 1));
+  const retorno = item.status !== "aguardando" && item.aguardando_ate && item.aguardando_ate <= hoje;
   const extras = [
     item.nota_pausa && `Parou em: ${item.nota_pausa}`,
     origemComId(item),
@@ -153,6 +159,25 @@ export default function ItemLista({ item, indice, ativo, lista, agora, prioridad
             )}
             {item.status === "pausado" && (
               <span className="shrink-0 rounded-full bg-etiqueta px-2 text-xs font-semibold text-tinta-2">Pausado</span>
+            )}
+            {item.status === "aguardando" && (
+              <button
+                type="button"
+                title="De quem é a vez e quando cobrar (W)"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  acoes.abrirMenu("aguardando");
+                }}
+                className="shrink-0 rounded-full bg-etiqueta px-2 text-xs font-semibold text-tinta-2 hover:ring-1 hover:ring-current"
+              >
+                {item.aguardando_quem ? `esperando ${item.aguardando_quem}` : "esperando"}
+                {item.aguardando_ate && ` · cobrar ${descreverPrazo(item.aguardando_ate, agora)}`}
+              </button>
+            )}
+            {retorno && (
+              <span title="Voltou de Aguardando: hora de cobrar o retorno" className="shrink-0 rounded-full bg-atraso-claro px-2 text-xs font-semibold text-atraso">
+                {item.aguardando_quem ? `cobrar ${item.aguardando_quem}` : "cobrar retorno"}
+              </span>
             )}
             {item.prioridade && (
               <button
@@ -221,8 +246,13 @@ export default function ItemLista({ item, indice, ativo, lista, agora, prioridad
         >
           {lista === "inbox" ? (
             <Acao icone="seta" titulo="Mover para A fazer (Enter)" aoClicar={() => acoes.mover("a_fazer")} />
+          ) : lista === "aguardando" ? (
+            <Acao icone="voltar" titulo="Voltar para A fazer (Enter)" aoClicar={() => acoes.mover("a_fazer")} />
           ) : (
             <Acao icone="voltar" titulo="Voltar para a caixa de entrada" aoClicar={() => acoes.mover("inbox")} />
+          )}
+          {lista !== "aguardando" && (
+            <Acao icone="ampulheta" titulo="Aguardando alguém (W)" aoClicar={() => acoes.abrirMenu("aguardando")} />
           )}
           <Acao icone="foco" titulo={item.status === "pausado" ? "Retomar o foco (F)" : "Focar agora (F)"} aoClicar={acoes.focar} />
           {!item.prioridade && <Acao icone="bandeira" titulo="Prioridade" aoClicar={() => acoes.abrirMenu("prioridade")} />}
@@ -230,6 +260,7 @@ export default function ItemLista({ item, indice, ativo, lista, agora, prioridad
           {!item.nota && <Acao icone="texto" titulo="Descrição (D)" aoClicar={() => acoes.editar("nota")} />}
           <Acao icone="cobrar" titulo="Cobrou de novo (B)" aoClicar={acoes.cobrar} />
           {item.link && <Acao icone="link" titulo="Abrir o link (O)" aoClicar={acoes.abrirLink} />}
+          <Acao icone="copiar" titulo="Copiar o status para responder (Ctrl+C)" aoClicar={acoes.copiarStatus} />
           <Acao icone="arquivar" titulo="Arquivar (E)" aoClicar={acoes.arquivar} />
         </div>
 
@@ -276,7 +307,9 @@ export default function ItemLista({ item, indice, ativo, lista, agora, prioridad
               }
             }}
           >
-            {menu === "prioridade" ? (
+            {menu === "aguardando" ? (
+              <MenuAguardando item={item} agora={agora} acoes={acoes} />
+            ) : menu === "prioridade" ? (
               <ul className="flex min-w-44 flex-col">
                 {[{ id: null as string | null, nome: "Nenhuma", cor: null }, ...prioridades].map((p, i) => (
                   <li key={p.id ?? "nenhuma"}>
@@ -350,4 +383,82 @@ function MenuData({ item, menu, hoje, amanha, acoes }: { item: Item; menu: Menu;
       <Calendario key={menu} valor={valor} aoEscolher={definir} aoFechar={() => acoes.abrirMenu(null)} />
     </div>
   );
+}
+
+/** Popover de Aguardando: de quem é a vez e quando cobrar o retorno. Enter confirma. */
+function MenuAguardando({ item, agora, acoes }: { item: Item; agora: Date; acoes: AcoesItem }) {
+  const [quem, setQuem] = useState(item.aguardando_quem ?? item.pessoa ?? "");
+  const [ate, setAte] = useState<string | null>(item.aguardando_ate ?? diasDepois(agora, 2));
+  const [calendario, setCalendario] = useState(false);
+  const opcoes = [
+    { nome: "Amanhã", valor: diasDepois(agora, 1) },
+    { nome: "Em 2 dias", valor: diasDepois(agora, 2) },
+    { nome: "Em 1 semana", valor: diasDepois(agora, 7) },
+    { nome: "Sem data", valor: null as string | null },
+  ];
+  const confirmar = () => acoes.aguardar(quem.trim() || null, ate);
+  return (
+    <form
+      className="flex w-72 flex-col gap-2 p-1"
+      onSubmit={(e) => {
+        e.preventDefault();
+        confirmar();
+      }}
+    >
+      <label className="text-xs font-semibold uppercase tracking-wider text-apagado">
+        Esperando quem
+        <input
+          autoFocus
+          value={quem}
+          onChange={(e) => setQuem(e.target.value)}
+          placeholder="Carlos, fornecedor, equipe de redes..."
+          className="mt-1 w-full rounded-lg border border-linha bg-folha px-2.5 py-1.5 text-sm font-normal normal-case tracking-normal text-tinta outline-none focus:border-destaque"
+        />
+      </label>
+      <p className="text-xs font-semibold uppercase tracking-wider text-apagado">Cobrar o retorno</p>
+      <div className="flex flex-wrap gap-1.5">
+        {opcoes.map((o) => (
+          <button
+            key={o.nome}
+            type="button"
+            onClick={() => setAte(o.valor)}
+            className={`rounded-full px-3 py-1 text-[13px] ${
+              ate === o.valor ? "bg-destaque font-semibold text-folha" : "bg-etiqueta text-tinta-2 hover:text-tinta"
+            }`}
+          >
+            {o.nome}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => setCalendario(!calendario)}
+          className={`rounded-full px-3 py-1 text-[13px] ${
+            ate && !opcoes.some((o) => o.valor === ate) ? "bg-destaque font-semibold text-folha" : "bg-etiqueta text-tinta-2 hover:text-tinta"
+          }`}
+        >
+          {ate && !opcoes.some((o) => o.valor === ate) ? descreverPrazo(ate, agora) : "Outra data"}
+        </button>
+      </div>
+      {calendario && (
+        <Calendario
+          valor={ate}
+          aoEscolher={(d) => {
+            setAte(d);
+            setCalendario(false);
+          }}
+          aoFechar={() => setCalendario(false)}
+        />
+      )}
+      <p className="text-[13px] text-suave">
+        {ate ? `No dia, o item volta para A fazer e o Juggl avisa para cobrar.` : "Fica em Aguardando até você tirar."}
+      </p>
+      <button type="submit" className="self-start rounded-lg bg-destaque px-3 py-1.5 text-sm font-semibold text-folha hover:opacity-90">
+        Aguardar <kbd className="ml-1 font-sans font-normal opacity-70">Enter</kbd>
+      </button>
+    </form>
+  );
+}
+
+function diasDepois(agora: Date, dias: number): string {
+  return dataLocalIso(new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() + dias));
 }

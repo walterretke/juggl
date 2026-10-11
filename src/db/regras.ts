@@ -60,7 +60,7 @@ export async function removerRegra(id: string): Promise<void> {
 /** Itens abertos para as regras: caixa de entrada, A fazer, pausados e o em foco. */
 export async function itensAbertos(): Promise<Item[]> {
   const db = await getDb();
-  return db.select<Item[]>(`${SELECT_ITEM} WHERE item.status IN ('inbox', 'a_fazer', 'pausado', 'em_foco')`);
+  return db.select<Item[]>(`${SELECT_ITEM} WHERE item.status IN ('inbox', 'a_fazer', 'pausado', 'em_foco', 'aguardando')`);
 }
 
 /** Títulos concluídos hoje (eventos `concluido` desde a meia-noite local). */

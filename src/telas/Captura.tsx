@@ -4,7 +4,7 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { reconhecerLink } from "../captura/links";
-import { parseCaptura, type Captura as DadosCaptura } from "../captura/parser";
+import { marcacoesDoTitulo, parseCaptura, type Captura as DadosCaptura, type OpcaoPrioridade } from "../captura/parser";
 import { resolverTitulo, tituloPadrao } from "../captura/titulo";
 import { avancarNumeroAtividade, gravarConfig, lerConfig, lerNumeroAtividade } from "../db/config";
 import { criarItem, listarSugestoes } from "../db/itens";
@@ -42,19 +42,35 @@ function esconder(devolverFoco: boolean) {
   return invoke("esconder_captura", { devolverFoco });
 }
 
-/** Monta o item a partir do formulário, com o link copiado se houver. */
-function capturaDoFormulario(valores: ValoresFormulario, link: string | null): DadosCaptura {
+/**
+ * Monta o item a partir do formulário, com o link copiado se houver. As marcações do modo
+ * avançado (@, #, !, >) também valem no título; um campo preenchido vence a marcação.
+ */
+function capturaDoFormulario(valores: ValoresFormulario, link: string | null, prioridades: OpcaoPrioridade[]): DadosCaptura {
+  const doTitulo = marcacoesDoTitulo(valores.titulo, new Date(), prioridades);
   const reconhecido = link ? reconhecerLink(link) : null;
+  const comLink: Pick<DadosCaptura, "link" | "origem" | "idExterno"> = doTitulo.link
+    ? { link: doTitulo.link, origem: doTitulo.origem, idExterno: doTitulo.idExterno }
+    : { link: reconhecido?.url ?? link, origem: reconhecido?.origem ?? "manual", idExterno: reconhecido?.idExterno ?? null };
   return {
-    titulo: valores.titulo.trim(),
-    pessoa: valores.pessoa.trim() || null,
-    projeto: valores.projeto.trim() || null,
-    prioridade: valores.prioridadeId,
-    prazo: valores.prazo,
-    link: reconhecido?.url ?? link,
-    origem: reconhecido?.origem ?? "manual",
-    idExterno: reconhecido?.idExterno ?? null,
+    titulo: doTitulo.titulo.trim(),
+    pessoa: valores.pessoa.trim() || doTitulo.pessoa,
+    projeto: valores.projeto.trim() || doTitulo.projeto,
+    prioridade: valores.prioridadeId ?? doTitulo.prioridade,
+    prazo: valores.prazo ?? doTitulo.prazo,
+    ...comLink,
   };
+}
+
+/** O que o título do formulário marcou, para mostrar no rodapé: "@carlos · #infra · sexta". */
+function resumoDasMarcacoes(valores: ValoresFormulario, captura: DadosCaptura, prioridades: Prioridade[]): string | null {
+  const partes = [
+    !valores.pessoa.trim() && captura.pessoa && `@${captura.pessoa}`,
+    !valores.projeto.trim() && captura.projeto && `#${captura.projeto}`,
+    !valores.prioridadeId && captura.prioridade && prioridades.find((p) => p.id === captura.prioridade)?.nome,
+    !valores.prazo && captura.prazo && `prazo ${captura.prazo.split("-").reverse().slice(0, 2).join("/")}`,
+  ].filter(Boolean);
+  return partes.length > 0 ? partes.join(" · ") : null;
 }
 
 export default function Captura() {
@@ -141,7 +157,7 @@ export default function Captura() {
     () =>
       modo === "avancado"
         ? parseCaptura(texto, new Date(), linkCopiado, prioridades)
-        : capturaDoFormulario(valores, linkCopiado),
+        : capturaDoFormulario(valores, linkCopiado, prioridades),
     [modo, texto, valores, linkCopiado, prioridades],
   );
 
@@ -278,8 +294,10 @@ export default function Captura() {
           <span className="text-atraso">{erro}</span>
         ) : modo === "avancado" ? (
           <span>Use @pessoa, #projeto, !prioridade e &gt;prazo. Enter salva, Esc fecha.</span>
+        ) : resumoDasMarcacoes(valores, captura, prioridades) ? (
+          <span className="truncate text-destaque-tinta">Do título: {resumoDasMarcacoes(valores, captura, prioridades)}. Enter salva.</span>
         ) : (
-          <span>Enter salva, Esc fecha.</span>
+          <span className="truncate">Enter salva, Esc fecha. @pessoa, #projeto, !prioridade e &gt;prazo valem no título.</span>
         )}
         <button
           type="button"

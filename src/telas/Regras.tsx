@@ -24,13 +24,14 @@ interface Props {
 }
 
 /** Texto de cada regra pronta, com o lugar do valor ajustável. */
-const PRONTAS: Record<IdPronta, { antes: string; depois: string; campo: "horas" | "dias" | "itens" | "hora" }> = {
+const PRONTAS: Record<IdPronta, { antes: string; depois: string; campo: "horas" | "dias" | "itens" | "hora" | null }> = {
   prazo_chegando: { antes: "Item vence em menos de", depois: "horas (prazo conta até as 18h) e não está em foco.", campo: "horas" },
   promessa_esquecida: { antes: "Item prometido a alguém está parado há", depois: "dias ou mais.", campo: "dias" },
   inbox_acumulando: { antes: "A caixa de entrada passou de", depois: "itens sem triagem.", campo: "itens" },
   ritual_pendente: { antes: "O dia não foi planejado até", depois: ".", campo: "hora" },
   foco_esquecido: { antes: "O timer está rodando há mais de", depois: "horas no mesmo item.", campo: "horas" },
   fim_do_dia: { antes: "Resumo do que foi feito e do que vence amanhã, às", depois: "(dias úteis).", campo: "hora" },
+  retorno_aguardando: { antes: "Chegou o dia de cobrar o retorno de quem você está aguardando", depois: "(o item volta para A fazer).", campo: null },
 };
 
 const NOVA: Regra = {
@@ -264,7 +265,7 @@ export default function Regras({ aoAvisar }: Props) {
           const indice = regras.indexOf(regra);
           const texto = PRONTAS[regra.id as IdPronta];
           if (!texto) return null;
-          const valor = regra.condicao[texto.campo];
+          const valor = texto.campo ? regra.condicao[texto.campo] : null;
           return (
             <li key={regra.id} className={linha(indice)} onClick={() => setSelecionada(indice)}>
               <Interruptor ligado={regra.ativa} rotulo={regra.nome} aoMudar={(ativa) => alterar({ ...regra, ativa })} />
@@ -272,7 +273,7 @@ export default function Regras({ aoAvisar }: Props) {
                 <p className="text-[15px] font-medium">{regra.nome}</p>
                 <p className="flex flex-wrap items-center gap-1.5 text-[13px] text-suave">
                   {texto.antes}
-                  {texto.campo === "hora" ? (
+                  {texto.campo === null ? null : texto.campo === "hora" ? (
                     <input
                       type="time"
                       aria-label={`Hora: ${regra.nome}`}
@@ -290,7 +291,7 @@ export default function Regras({ aoAvisar }: Props) {
                       onBlur={(e) => {
                         const n = Math.max(1, Math.round(Number(e.target.value) || 1));
                         e.target.value = String(n);
-                        alterar({ ...regra, condicao: { ...regra.condicao, [texto.campo]: n } });
+                        alterar({ ...regra, condicao: { ...regra.condicao, [texto.campo!]: n } });
                       }}
                       onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
                       className={campoNumero}

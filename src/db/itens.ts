@@ -2,9 +2,10 @@ import { normalizarNome, type Captura } from "../captura/parser";
 import type { CorPrioridade } from "./prioridades";
 import { getDb } from ".";
 import { agoraIso, novoId } from "./ids";
+import { dataLocalIso } from "../captura/datas";
 
 export type Status = "inbox" | "a_fazer" | "em_foco" | "pausado" | "aguardando" | "feito" | "arquivado";
-export type Lista = "inbox" | "a_fazer";
+export type Lista = "inbox" | "a_fazer" | "aguardando";
 /** Momento do dia para um item de Hoje: um "quando" leve, que não quebra com interrupções. */
 export type Quando = "manha" | "depois_daily" | "tarde" | "fim_dia";
 
@@ -24,6 +25,10 @@ export interface Item {
   dia_planejado: string | null;
   /** Momento aproximado em que vai ser feito no dia planejado. */
   quando: Quando | null;
+  /** Aguardando: de quem é a vez (texto livre, como "Carlos" ou "fornecedor"). */
+  aguardando_quem: string | null;
+  /** Aguardando: dia de cobrar o retorno; nesse dia o item volta sozinho para A fazer. */
+  aguardando_ate: string | null;
   link: string | null;
   origem: string;
   id_externo: string | null;
@@ -44,7 +49,21 @@ export interface Item {
 
 /** Campos que a triagem pode mudar. */
 export type Mudancas = Partial<
-  Pick<Item, "titulo" | "nota" | "status" | "prioridade_id" | "prazo" | "prometido_para" | "dia_planejado" | "quando" | "pessoa_id" | "projeto_id">
+  Pick<
+    Item,
+    | "titulo"
+    | "nota"
+    | "status"
+    | "prioridade_id"
+    | "prazo"
+    | "prometido_para"
+    | "dia_planejado"
+    | "quando"
+    | "aguardando_quem"
+    | "aguardando_ate"
+    | "pessoa_id"
+    | "projeto_id"
+  >
 >;
 
 /** O que é preciso para desfazer uma mudança: os valores anteriores e os eventos gravados. */
@@ -126,19 +145,22 @@ const ORDEM: Record<Lista, string> = {
             item.prazo IS NULL, item.prazo,
             prioridade.ordem IS NULL, prioridade.ordem,
             cobrancas DESC, item.criado_em`,
+  // Aguardando: o retorno mais próximo primeiro; sem data no fim.
+  aguardando: "item.aguardando_ate IS NULL, item.aguardando_ate, item.atualizado_em",
 };
 
 /** Status que aparecem em cada lista. Pausados voltam para A fazer, com a nota de onde parou. */
 const STATUS_DA_LISTA: Record<Lista, string> = {
   inbox: "'inbox'",
   a_fazer: "'a_fazer', 'pausado'",
+  aguardando: "'aguardando'",
 };
 
 /** SELECT de itens com pessoa, projeto, nota da última pausa, tempo em foco e cobranças. */
 export const SELECT_ITEM = `
   SELECT item.id, item.titulo, item.nota, item.status, item.prioridade_id, prioridade.nome AS prioridade,
          prioridade.cor AS prioridade_cor, item.prazo, item.prometido_para, item.dia_planejado,
-         item.quando,
+         item.quando, item.aguardando_quem, item.aguardando_ate,
          item.link, item.origem,
          item.id_externo, item.criado_em, item.atualizado_em, item.pessoa_id, item.projeto_id,
          pessoa.apelido AS pessoa, projeto.nome AS projeto,
@@ -147,7 +169,9 @@ export const SELECT_ITEM = `
              WHERE e.item_id = item.id AND e.tipo = 'foco_fim' ORDER BY e.timestamp DESC LIMIT 1)
          END AS nota_pausa,
          COALESCE((SELECT SUM(json_extract(e.dados, '$.duracao_ms')) FROM evento e
-                    WHERE e.item_id = item.id AND e.tipo = 'foco_fim'), 0) AS tempo_ms,
+                    WHERE e.item_id = item.id AND e.tipo = 'foco_fim'), 0)
+           + COALESCE((SELECT CAST(SUM((julianday(s.fim) - julianday(s.inicio)) * 86400000) AS INTEGER)
+                         FROM sessao_manual s WHERE s.item_id = item.id), 0) AS tempo_ms,
          (SELECT COUNT(*) FROM evento e WHERE e.item_id = item.id AND e.tipo = 'cobrado') AS cobrancas,
          (SELECT MAX(e.timestamp) FROM evento e WHERE e.item_id = item.id AND e.tipo = 'cobrado') AS ultima_cobranca
     FROM item
@@ -164,10 +188,11 @@ export async function contarPorLista(): Promise<Record<Lista, number>> {
   const db = await getDb();
   const [linha] = await db.select<Record<Lista, number>[]>(
     `SELECT COALESCE(SUM(status IN (${STATUS_DA_LISTA.inbox})), 0) AS inbox,
-            COALESCE(SUM(status IN (${STATUS_DA_LISTA.a_fazer})), 0) AS a_fazer
+            COALESCE(SUM(status IN (${STATUS_DA_LISTA.a_fazer})), 0) AS a_fazer,
+            COALESCE(SUM(status IN (${STATUS_DA_LISTA.aguardando})), 0) AS aguardando
        FROM item`,
   );
-  return linha ?? { inbox: 0, a_fazer: 0 };
+  return linha ?? { inbox: 0, a_fazer: 0, aguardando: 0 };
 }
 
 const CAMPOS_EDITAVEIS = [
@@ -179,6 +204,8 @@ const CAMPOS_EDITAVEIS = [
   "prometido_para",
   "dia_planejado",
   "quando",
+  "aguardando_quem",
+  "aguardando_ate",
   "pessoa_id",
   "projeto_id",
 ] as const;
@@ -214,7 +241,12 @@ export async function registrarEvento(itemId: string, tipo: string, dados: unkno
  * Aplica mudanças da triagem e registra os eventos que o PDF prevê
  * (prazo_alterado, concluido). Devolve o necessário para desfazer.
  */
-export async function alterarItem(item: Item, mudancas: Mudancas): Promise<Alteracao> {
+export async function alterarItem(item: Item, original: Mudancas): Promise<Alteracao> {
+  // Saiu de Aguardando (ou resolveu o retorno): a espera acaba junto, e o desfazer a traz de volta.
+  const mudancas: Mudancas =
+    "status" in original && original.status !== "aguardando" && !("aguardando_ate" in original) && (item.aguardando_ate || item.aguardando_quem)
+      ? { ...original, aguardando_quem: null, aguardando_ate: null }
+      : original;
   const anterior: Mudancas = {};
   for (const c of CAMPOS_EDITAVEIS) {
     if (c in mudancas) (anterior as Record<string, unknown>)[c] = item[c];
@@ -249,4 +281,62 @@ export async function listarSugestoes(): Promise<{ pessoas: string[]; projetos: 
   const pessoas = await db.select<{ apelido: string }[]>("SELECT apelido FROM pessoa ORDER BY apelido");
   const projetos = await db.select<{ nome: string }[]>("SELECT nome FROM projeto ORDER BY nome");
   return { pessoas: pessoas.map((p) => p.apelido), projetos: projetos.map((p) => p.nome) };
+}
+
+/**
+ * Chegou o dia de cobrar o retorno: os itens aguardando voltam para A fazer, mantendo
+ * de quem era a vez (o item mostra "cobrar retorno"). Devolve quantos voltaram.
+ */
+export async function devolverAguardando(hoje = new Date()): Promise<number> {
+  const db = await getDb();
+  const { rowsAffected } = await db.execute(
+    "UPDATE item SET status = 'a_fazer', atualizado_em = $1 WHERE status = 'aguardando' AND aguardando_ate <= $2",
+    [agoraIso(), dataLocalIso(hoje)],
+  );
+  return rowsAffected;
+}
+
+/** Um item na busca global: o mínimo para achar e abrir. */
+export interface ItemBusca {
+  id: string;
+  titulo: string;
+  nota: string | null;
+  status: Status;
+  pessoa: string | null;
+  projeto: string | null;
+  link: string | null;
+  id_externo: string | null;
+  atualizado_em: string;
+}
+
+/** Todos os itens, inclusive concluídos e arquivados, para a busca global (o filtro é em `filtrarBusca`). */
+export async function itensParaBusca(): Promise<ItemBusca[]> {
+  const db = await getDb();
+  return db.select<ItemBusca[]>(
+    `SELECT item.id, item.titulo, item.nota, item.status, pessoa.apelido AS pessoa, projeto.nome AS projeto,
+            item.link, item.id_externo, item.atualizado_em
+       FROM item
+       LEFT JOIN pessoa ON pessoa.id = item.pessoa_id
+       LEFT JOIN projeto ON projeto.id = item.projeto_id
+      ORDER BY item.atualizado_em DESC`,
+  );
+}
+
+/** Um item completo pelo id (qualquer status). */
+export async function lerItem(id: string): Promise<Item | null> {
+  const db = await getDb();
+  const [item] = await db.select<Item[]>(`${SELECT_ITEM} WHERE item.id = $1`, [id]);
+  return item ?? null;
+}
+
+/** Itens concluídos no intervalo [de, ate), o mais antigo primeiro. */
+export async function concluidosEntre(de: Date, ate: Date): Promise<Item[]> {
+  const db = await getDb();
+  return db.select<Item[]>(
+    `${SELECT_ITEM} WHERE item.status = 'feito'
+       AND EXISTS (SELECT 1 FROM evento e WHERE e.item_id = item.id AND e.tipo = 'concluido'
+                    AND e.timestamp >= $1 AND e.timestamp < $2)
+     ORDER BY item.atualizado_em`,
+    [de.toISOString(), ate.toISOString()],
+  );
 }
