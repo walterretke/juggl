@@ -89,3 +89,9 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
+
+/* Barras de rolagem finas e na cor do tema, em vez da barra cinza padrão do sistema. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-apagado) transparent;
+}

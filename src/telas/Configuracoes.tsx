@@ -87,10 +87,10 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevo
 
   return (
     <div
-      className="fixed inset-0 z-10 flex items-start justify-center bg-black/30 pt-16"
+      className="fixed inset-0 z-10 flex items-start justify-center bg-black/30 p-4 sm:pt-16"
       onMouseDown={(e) => e.target === e.currentTarget && aoFechar()}
     >
-      <section className="w-[min(560px,90vw)] max-h-[88vh] overflow-y-auto rounded-2xl bg-folha p-7 text-tinta shadow-2xl ring-1 ring-linha">
+      <section className="w-[min(560px,100%)] max-h-full overflow-y-auto rounded-2xl bg-folha p-7 text-tinta shadow-2xl ring-1 ring-linha">
         <header className="mb-5 flex items-center justify-between">
           <h2 className="font-titulo text-2xl font-medium tracking-tight">Configurações</h2>
           <button type="button" onClick={aoFechar} className="text-sm text-suave hover:text-tinta">
