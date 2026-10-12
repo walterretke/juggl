@@ -49,6 +49,12 @@ jobs:
             codigo=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOKEN" https://api.github.com/repos/walterretke/juggl-releases)
             if [ "$codigo" != "200" ]; then echo "::error::RELEASES_TOKEN não acessa walterretke/juggl-releases (HTTP $codigo). O repositório existe e o token foi criado para ele?"; falta=1; fi
           fi
+          # Uma versão precisa de pelo menos um commit no repositório: cria o README se ele estiver vazio.
+          if [ "$falta" = 0 ] && [ "$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOKEN" https://api.github.com/repos/walterretke/juggl-releases/readme)" = "404" ]; then
+            conteudo=$(printf '# Juggl\n\nBaixe o instalador do Juggl para Windows em [Releases](https://github.com/walterretke/juggl-releases/releases/latest).\n' | base64 -w0)
+            curl -sf -X PUT -H "Authorization: Bearer $TOKEN" https://api.github.com/repos/walterretke/juggl-releases/contents/README.md \
+              -d "{\"message\":\"README\",\"content\":\"$conteudo\"}" > /dev/null || { echo "::error::Não consegui criar o README em juggl-releases"; falta=1; }
+          fi
           exit $falta
 
       - uses: tauri-apps/tauri-action@v0
