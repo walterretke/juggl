@@ -33,6 +33,24 @@ jobs:
 
       - run: npm test
 
+      - name: Conferir segredos
+        shell: bash
+        env:
+          CHAVE: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          falta=0
+          if [ -z "$CHAVE" ]; then echo "::error::Falta o segredo TAURI_SIGNING_PRIVATE_KEY"; falta=1; fi
+          if [ -z "$TOKEN" ]; then echo "::error::Falta o segredo RELEASES_TOKEN"; falta=1; fi
+          if [ -n "$CHAVE" ] && ! printf '%s' "$CHAVE" | base64 -d 2>/dev/null | grep -q "secret key"; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY não parece a chave do arquivo TAURI_SIGNING_PRIVATE_KEY.txt (cole o conteúdo inteiro, uma linha só)"; falta=1
+          fi
+          if [ -n "$TOKEN" ]; then
+            codigo=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOKEN" https://api.github.com/repos/walterretke/juggl-releases)
+            if [ "$codigo" != "200" ]; then echo "::error::RELEASES_TOKEN não acessa walterretke/juggl-releases (HTTP $codigo). O repositório existe e o token foi criado para ele?"; falta=1; fi
+          fi
+          exit $falta
+
       - uses: tauri-apps/tauri-action@v0
         env:
           # Token com permissão de escrita em walterretke/juggl-releases.
