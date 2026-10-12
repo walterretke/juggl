@@ -34,6 +34,7 @@ jobs:
       - run: npm test
 
       - name: Conferir segredos
+        id: segredos
         shell: bash
         env:
           CHAVE: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -55,6 +56,10 @@ jobs:
             curl -sf -X PUT -H "Authorization: Bearer $TOKEN" https://api.github.com/repos/walterretke/juggl-releases/contents/README.md \
               -d "{\"message\":\"README\",\"content\":\"$conteudo\"}" > /dev/null || { echo "::error::Não consegui criar o README em juggl-releases"; falta=1; }
           fi
+          if [ "$falta" = 0 ]; then
+            ramo=$(curl -s -H "Authorization: Bearer $TOKEN" https://api.github.com/repos/walterretke/juggl-releases | jq -r .default_branch)
+            echo "ramo=$ramo" >> "$GITHUB_OUTPUT"
+          fi
           exit $falta
 
       - uses: tauri-apps/tauri-action@v0
@@ -68,7 +73,7 @@ jobs:
           owner: walterretke
           repo: juggl-releases
           # A tag nasce no juggl-releases, que não tem os commits deste repositório.
-          commitish: main
+          releaseCommitish: ${{ steps.segredos.outputs.ramo }}
           tagName: v__VERSION__
           releaseName: Juggl __VERSION__
           releaseBody: Baixe o instalador .msi (ou o -setup.exe) abaixo. Quem já tem o Juggl recebe a atualização dentro do app.
