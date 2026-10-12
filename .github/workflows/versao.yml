@@ -67,6 +67,8 @@ jobs:
         with:
           owner: walterretke
           repo: juggl-releases
+          # A tag nasce no juggl-releases, que não tem os commits deste repositório.
+          commitish: main
           tagName: v__VERSION__
           releaseName: Juggl __VERSION__
           releaseBody: Baixe o instalador .msi (ou o -setup.exe) abaixo. Quem já tem o Juggl recebe a atualização dentro do app.
