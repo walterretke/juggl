@@ -1,6 +1,7 @@
 name: Publicar versão
 
-# Gera o instalador do Windows e publica uma versão no GitHub, com o latest.json
+# Gera o instalador do Windows e publica a versão no repositório público
+# walterretke/juggl-releases (o código fica privado aqui), com o latest.json
 # que o Juggl consulta para se atualizar sozinho. Dispare criando uma tag v0.2.0
 # (a versão do tauri.conf.json precisa ser a mesma) ou pelo botão "Run workflow".
 on:
@@ -34,11 +35,14 @@ jobs:
 
       - uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Token com permissão de escrita em walterretke/juggl-releases.
+          GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           # Chave que assina as atualizações (Settings > Secrets and variables > Actions).
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
+          owner: walterretke
+          repo: juggl-releases
           tagName: v__VERSION__
           releaseName: Juggl __VERSION__
           releaseBody: Baixe o instalador .msi (ou o -setup.exe) abaixo. Quem já tem o Juggl recebe a atualização dentro do app.

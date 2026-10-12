@@ -130,10 +130,10 @@ Pelo teclado:
 
 ## Instalar e atualizar
 
-- Baixe o instalador `.msi` (ou o `-setup.exe`) na página [Releases](https://github.com/walterretke/juggl/releases) e instale. O banco é o mesmo do `npm run tauri dev`: nada se perde.
+- Baixe o instalador `.msi` (ou o `-setup.exe`) na página [Releases](https://github.com/walterretke/juggl-releases/releases/latest) e instale. O banco é o mesmo do `npm run tauri dev`: nada se perde.
 - O Juggl procura versão nova ao abrir e a cada 6 horas. Quando há, aparece "Versão X disponível" no topo: **Instalar e reiniciar** (`I`). Em Configurações há "Procurar atualização".
 - Para publicar uma versão: suba a versão em `src-tauri/tauri.conf.json` e `package.json`, crie a tag `vX.Y.Z` e envie (`git push origin vX.Y.Z`). O workflow "Publicar versão" gera o instalador, assina a atualização e publica.
-- A assinatura usa o segredo `TAURI_SIGNING_PRIVATE_KEY` do repositório (Settings › Secrets and variables › Actions). Sem ele, a publicação falha.
+- O código fica neste repositório; os instaladores saem no repositório público `walterretke/juggl-releases`. A publicação usa dois segredos deste repositório (Settings › Secrets and variables › Actions): `TAURI_SIGNING_PRIVATE_KEY`, que assina a atualização, e `RELEASES_TOKEN`, um token com Contents: Read and write no juggl-releases. Sem eles, a publicação falha.
 
 ## Horas da semana
 
