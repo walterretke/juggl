@@ -4,7 +4,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { backupAgora, listarBackups, restaurarBackup } from "../db/backup";
 import { gravarConfig, lerConfig } from "../db/config";
-import { atalhoDoEvento } from "./atalho";
+import CampoAtalho from "./CampoAtalho";
 import EditorPrioridades from "./EditorPrioridades";
 import SecaoDevops from "./SecaoDevops";
 import SecaoRecorrentes from "./SecaoRecorrentes";
@@ -18,15 +18,15 @@ interface Props {
   aoSincronizarDevops: () => Promise<void>;
   /** Procura versão nova; devolve a mensagem para mostrar. */
   aoProcurarAtualizacao: () => Promise<string>;
+  /** Fecha as configurações e abre a apresentação do primeiro uso. */
+  aoReverBoasVindas: () => void;
   aoFechar: () => void;
 }
 
-export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevops, aoProcurarAtualizacao, aoFechar }: Props) {
+export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevops, aoProcurarAtualizacao, aoReverBoasVindas, aoFechar }: Props) {
   const [versao, setVersao] = useState("");
   const [mensagemVersao, setMensagemVersao] = useState<string | null>(null);
   const [gravando, setGravando] = useState(false);
-  const [novoAtalho, setNovoAtalho] = useState<string | null>(null);
-  const [mensagemAtalho, setMensagemAtalho] = useState<{ ok: boolean; texto: string } | null>(null);
   const [backups, setBackups] = useState<string[]>([]);
   const [mensagemBackup, setMensagemBackup] = useState<string | null>(null);
   /** Backup escolhido para restaurar, esperando a confirmação. */
@@ -65,19 +65,6 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevo
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
   }, [gravando, aoFechar]);
-
-  async function salvarAtalho() {
-    if (!novoAtalho) return;
-    try {
-      await invoke("definir_atalho", { atalho: novoAtalho });
-      await gravarConfig("atalho", novoAtalho);
-      aoMudarAtalho(novoAtalho);
-      setMensagemAtalho({ ok: true, texto: `Atalho trocado para ${rotuloAtalho(novoAtalho)}.` });
-      setNovoAtalho(null);
-    } catch (e) {
-      setMensagemAtalho({ ok: false, texto: String(e) });
-    }
-  }
 
   async function fazerBackup() {
     try {
@@ -138,44 +125,7 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevo
         <p className="mt-1 text-sm text-suave">
           Atual: <strong>{rotuloAtalho(atalho)}</strong>. Clique no campo e aperte a combinação nova.
         </p>
-        <div className="mt-2 flex gap-2">
-          <input
-            readOnly
-            value={gravando ? (novoAtalho ? rotuloAtalho(novoAtalho) : "Aperte as teclas…") : rotuloAtalho(novoAtalho ?? atalho)}
-            onFocus={() => {
-              setGravando(true);
-              setMensagemAtalho(null);
-            }}
-            onBlur={() => setGravando(false)}
-            onKeyDown={(e) => {
-              e.preventDefault();
-              if (e.key === "Escape") {
-                setNovoAtalho(null);
-                e.currentTarget.blur();
-                return;
-              }
-              const combinacao = atalhoDoEvento(e);
-              if (combinacao) {
-                setNovoAtalho(combinacao);
-                e.currentTarget.blur();
-              }
-            }}
-            className="flex-1 rounded-lg border border-linha bg-cartao px-3 py-2 text-[15px] outline-none focus:border-destaque"
-          />
-          <button
-            type="button"
-            disabled={!novoAtalho}
-            onClick={salvarAtalho}
-            className="rounded-lg bg-destaque px-4 text-sm font-semibold text-folha hover:opacity-90 disabled:opacity-40"
-          >
-            Salvar
-          </button>
-        </div>
-        {mensagemAtalho && (
-          <p className={`mt-2 text-xs ${mensagemAtalho.ok ? "text-destaque" : "text-atraso"}`}>
-            {mensagemAtalho.texto}
-          </p>
-        )}
+        <CampoAtalho atalho={atalho} aoMudarAtalho={aoMudarAtalho} aoGravar={setGravando} />
 
         <label className="mt-3 flex items-start gap-2 text-sm">
           <input
@@ -300,6 +250,16 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevo
         </div>
         {mensagemVersao && <p className="mt-2 text-sm text-suave">{mensagemVersao}</p>}
         <p className="mt-1 text-sm text-suave">O Juggl procura sozinho ao abrir e a cada 6 horas.</p>
+
+        <h3 className="mt-7 text-[15px] font-semibold">Primeiros passos</h3>
+        <p className="mt-1 text-sm text-suave">A apresentação do primeiro uso: atalho, Meu dia, avisos e Azure DevOps.</p>
+        <button
+          type="button"
+          onClick={aoReverBoasVindas}
+          className="mt-2 rounded-lg border border-linha px-3.5 py-2 text-sm hover:bg-etiqueta"
+        >
+          Rever as boas-vindas
+        </button>
 
         <p className="mt-6 border-t border-linha pt-4 text-sm text-suave">
           Fechar a janela deixa o Juggl na bandeja do sistema, com o atalho ativo. Para sair, use Sair no ícone da bandeja.
