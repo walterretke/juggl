@@ -15,11 +15,11 @@ npm run tauri dev
 
 ## Nova tarefa
 
-`Ctrl+Shift+Espaço` abre a janela de nova tarefa sobre qualquer janela. Enter (de qualquer lugar da janela) ou o botão Salvar grava na caixa de entrada, Esc cancela.
+`Ctrl+Shift+Espaço` abre a janela de nova tarefa sobre qualquer janela. Enter (de qualquer lugar da janela) ou o botão Salvar grava, Esc cancela. Em "Entra em" você escolhe a coluna: Chegou (caixa de entrada), Hoje (Meu dia) ou A fazer; a escolha fica lembrada.
 
 Toda atividade tem título e descrição. Se houver texto selecionado na janela em uso, ele vira a descrição (com as quebras de linha) e o título já vem preenchido como "Atividade 1", "Atividade 2"... e selecionado, para trocar digitando por cima. Título vazio com descrição também vira "Atividade N"; o número só avança quando esse nome é usado. Para pegar a seleção o Juggl simula o comando de copiar (Ctrl+Insert no Windows e no Linux, Cmd+C no macOS) e depois devolve a área de transferência como estava. Dá para desligar nas configurações. Limitações: no macOS o Juggl precisa da permissão de Acessibilidade; no Linux com Wayland não funciona; se a área de transferência tinha uma imagem, ela é trocada pelo texto copiado.
 
-O modo padrão é um formulário: título, descrição (Shift+Enter quebra a linha), quem pediu e projeto (com sugestões dos nomes já usados), prioridade e prazo (Hoje, Amanhã ou um calendário). Tab passa de um campo para o outro, as setas escolhem a prioridade e o prazo, e Enter salva de qualquer campo.
+O modo padrão é um formulário: título, descrição com formatação (negrito, itálico, tachado e listas; Shift+Enter quebra a linha), quem pediu e projeto (com sugestões dos nomes já usados), prioridade e prazo (Hoje, Amanhã, Esta semana, Este mês ou um calendário). A descrição é guardada em Markdown. Tab passa de um campo para o outro, as setas escolhem a prioridade e o prazo, e Enter salva de qualquer campo.
 
 As marcações abaixo também valem no título do formulário (`Liberar VPN @carlos >sexta`): o rodapé mostra o que foi reconhecido, e um campo preenchido vence a marcação. Um `#` seguido só de números (`Bug #4821`) fica no título.
 
@@ -67,7 +67,7 @@ Pelo teclado:
 
 - `Ctrl+K` (ou `/`, ou "Buscar" na barra lateral) busca qualquer pedido pelo título, descrição, quem pediu, projeto ou número do chamado, sem ligar para acentos. Concluídos e arquivados também aparecem.
 - Enter abre o item na lista dele. Um concluído ou arquivado volta para a lista em que estava (`Z` desfaz). `Ctrl+C` copia o status.
-- Sem nada digitado, a mesma janela lista os comandos: ir para uma tela, capturar, copiar a daily, abrir a mini-janela.
+- Sem nada digitado, a mesma janela lista os comandos: ir para uma tela, criar uma tarefa, copiar a daily, abrir o overlay de foco, ligar o som.
 
 ## Aguardando alguém
 
@@ -77,15 +77,28 @@ Pelo teclado:
 
 ## Foco e timer
 
-- A descrição aparece embaixo do título nas listas; clique nela, no ícone de linhas ou aperte `D` para editar (no Agora também). Enter quebra a linha, `Ctrl+Enter` salva.
+- Clique num cartão (ou `A`/`D` numa lista) para abrir o editor da tarefa: descrição formatada, checklist de passos (arraste para reordenar), anexos e horário na agenda. Enter quebra a linha, `Ctrl+Enter` salva.
 - `F` em qualquer item põe ele em foco e abre a tela **Agora**, com o timer correndo. Só um item fica em foco por vez.
 - Na tela Agora: `P` para o timer (pergunta onde você parou; a tarefa continua aberta), `X` conclui a tarefa (`Z` desfaz) e `1` `2` `3` focam uma das próximas de A fazer.
 - Trocar de foco pausa o item anterior com a nota de onde parou. Itens pausados voltam para A fazer mostrando essa nota.
 - O tempo fica gravado nos eventos `foco_inicio` e `foco_fim`. Se o app for fechado ou o computador dormir no meio do foco, a sessão é encerrada no último minuto em que o app estava rodando.
 - A bandeja mostra o item em foco e há quanto tempo, com a opção Parar timer.
 - A barra lateral mostra o item em foco com o timer e o botão de pausar; clicar abre a tela Agora, e soltar um item ali põe ele em foco.
-- **Mini-janela**: o botão ao lado do timer (ou "Mini-janela" no Agora) abre uma faixa sempre por cima das outras janelas, com o foco, o timer e Pausar. Arraste pela faixa para mudar de lugar.
+- **Overlay de foco**: ao começar um foco abre uma faixa discreta no canto inferior direito, sempre por cima e quase transparente até o mouse passar. Tem o timer, o som, Pausar (depois, Retomar) e Finalizar, que pede uma mensagem de encerramento opcional, guardada na tarefa. Desliga em Configurações; o botão ao lado do timer (ou "Overlay no canto" no Agora) abre na hora.
+- **Sons para focar**: no Agora e em Meu dia, o botão Som toca ruído marrom, rosa, chuva ou ondas (gerados no próprio app, funcionam offline) ou uma rádio (lofi, ambiente, clássica, jazz; precisa de internet). Dá para tocar sozinho quando um foco começa; para quando o timer para.
 - Sem teclado nem mouse por 10 minutos (ajustável em Configurações, 0 desliga), o foco pausa sozinho e o tempo parado não conta. No Linux isso funciona no X11; no Wayland a pausa automática fica desligada.
+
+## Agenda
+
+A tela **Agenda** mostra mês, semana ou dia, como o Google Agenda. Tarefas com horário aparecem no horário; as sem horário ficam na faixa "Sem horário" do dia planejado ou do prazo. Arraste uma tarefa para um horário para marcar, ou para a faixa de cima para tirar o horário. Clique num horário vazio para criar um compromisso (que pode repetir todo dia, nos dias úteis, em certos dias da semana ou todo mês) ou uma tarefa. Na visão do mês, o que se repete fica discreto. O botão 24h mostra o dia inteiro sem rolar; a escolha fica salva. `←` `→` mudam o período e `T` volta para hoje.
+
+## Fechadas e apagar
+
+**Fechadas** lista as tarefas concluídas e arquivadas, com busca; "Restaurar" devolve para a coluna de onde a tarefa saiu. `Delete` (ou a lixeira) apaga uma tarefa, e `Z` desfaz; as horas de foco dela continuam contando nas Horas da semana.
+
+## Anexos
+
+No editor da tarefa, "Anexar arquivo", arrastar ou colar (`Ctrl+V`) adiciona anexos, até 15 MB cada. Fotos e prints são reduzidos para no máximo 1600 px e convertidos para WebP; os outros arquivos são guardados com gzip quando isso economiza espaço. Imagens abrem numa prévia; o resto abre no programa padrão. "Salvar em Downloads" grava uma cópia.
 
 ## Ritual da manhã
 

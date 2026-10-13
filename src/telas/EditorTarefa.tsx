@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatarDuracao } from "../captura/datas";
 import { buscarOuCriarPessoa, buscarOuCriarProjeto, listarSugestoes, type Item, type Mudancas } from "../db/itens";
 import type { Prioridade } from "../db/prioridades";
 import Formulario, { type ValoresFormulario } from "./captura/Formulario";
+import Anexos from "./Anexos";
 import Checklist from "./Checklist";
 import Icone, { type NomeIcone } from "./Icone";
 
@@ -110,6 +111,7 @@ export default function EditorTarefa({
   const [sugestoes, setSugestoes] = useState<{ pessoas: string[]; projetos: string[] }>({ pessoas: [], projetos: [] });
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  const adicionarAnexos = useRef<((arquivos: File[]) => void) | null>(null);
 
   useEffect(() => {
     listarSugestoes().then(setSugestoes).catch(() => {});
@@ -155,6 +157,22 @@ export default function EditorTarefa({
     }
   }
 
+  // Se o foco saiu do editor (um botão clicado sumiu, por exemplo), Esc e Ctrl+Enter ainda valem.
+  useEffect(() => {
+    function aoTeclarFora(e: KeyboardEvent) {
+      if (e.target !== document.body || e.defaultPrevented) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        aoFechar();
+      } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        salvar();
+      }
+    }
+    window.addEventListener("keydown", aoTeclarFora);
+    return () => window.removeEventListener("keydown", aoTeclarFora);
+  });
+
   const tempo = item.tempo_ms > 0 ? `${formatarDuracao(item.tempo_ms)} em foco` : null;
 
   return (
@@ -167,6 +185,20 @@ export default function EditorTarefa({
         role="dialog"
         aria-label={`Tarefa: ${item.titulo}`}
         onKeyDown={aoTeclar}
+        // Colar um print ou arrastar um arquivo em qualquer lugar do editor vira anexo.
+        onPasteCapture={(e) => {
+          const arquivos = [...e.clipboardData.files];
+          if (arquivos.length === 0) return;
+          e.preventDefault();
+          e.stopPropagation();
+          adicionarAnexos.current?.(arquivos);
+        }}
+        onDragOver={(e) => e.dataTransfer.types.includes("Files") && e.preventDefault()}
+        onDrop={(e) => {
+          if (e.dataTransfer.files.length === 0) return;
+          e.preventDefault();
+          adicionarAnexos.current?.([...e.dataTransfer.files]);
+        }}
         className="w-[min(640px,100%)] rounded-2xl bg-folha px-6 pt-5 pb-4 text-tinta shadow-2xl ring-1 ring-linha select-text"
       >
         <p className="mb-3 flex flex-wrap gap-x-3 text-xs text-apagado">
@@ -201,6 +233,7 @@ export default function EditorTarefa({
                 </p>
               )}
               <Checklist itemId={item.id} aoMudar={aoMudarPartes} />
+              <Anexos itemId={item.id} aoMudar={aoMudarPartes} refAdicionar={adicionarAnexos} />
             </>
           }
         />
