@@ -15,6 +15,7 @@ import {
 import { montarQuadro, NOME_QUANDO, proximoQuando, quandoPadrao } from "../ritual/quadro";
 import { ETIQUETA_PRIORIDADE, FAIXA_PRIORIDADE } from "./cores";
 import { COR_ORIGEM } from "./origens";
+import SeletorSom from "./SeletorSom";
 
 interface Props {
   /** Muda quando os itens mudam em outra tela, para recarregar. */
@@ -33,6 +34,8 @@ interface Props {
   aoArrastar: (item: Item) => void;
   /** Copia o resumo da daily (ontem, hoje, bloqueios). */
   aoCopiarDaily: () => void;
+  /** Som do foco (na coluna Fazendo agora). */
+  som: React.ComponentProps<typeof SeletorSom>;
   /** Clique num cartão: abre a tarefa para editar. */
   aoAbrir: (item: Item) => void;
   /** Atalho global da captura, para o primeiro uso. */
@@ -146,6 +149,7 @@ export default function MeuDia({
   aoArrastar,
   aoCopiarDaily,
   aoAbrir,
+  som,
   atalhoCaptura,
 }: Props) {
   const [itens, setItens] = useState<Item[] | null>(null);
@@ -551,6 +555,9 @@ export default function MeuDia({
                 >
                   Concluir tarefa
                 </button>
+              </div>
+              <div className="mt-1">
+                <SeletorSom {...som} compacto />
               </div>
             </article>
           ) : (

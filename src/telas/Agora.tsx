@@ -5,6 +5,7 @@ import type { Item } from "../db/itens";
 import { NOME_QUANDO } from "../ritual/quadro";
 import { COR_ORIGEM, NOME_ORIGEM } from "./origens";
 import TextoFormatado from "./TextoFormatado";
+import SeletorSom from "./SeletorSom";
 
 interface Props {
   foco: Foco | null;
@@ -20,6 +21,8 @@ interface Props {
   aoPlanejar: () => void;
   /** Abre a tarefa em foco no editor (D). */
   aoEditar: () => void;
+  /** Som do foco: escolha, o que está tocando e liga/desliga. */
+  som: React.ComponentProps<typeof SeletorSom>;
   aoAbrirMini: () => void;
 }
 
@@ -36,6 +39,7 @@ export default function Agora({
   aoPlanejar,
   aoEditar,
   aoAbrirMini,
+  som,
 }: Props) {
   const [agora, setAgora] = useState(() => Date.now());
 
@@ -133,11 +137,14 @@ export default function Agora({
             <button
               type="button"
               onClick={aoAbrirMini}
-              title="Uma faixa sempre por cima das outras janelas, com o foco e o timer"
+              title="Uma faixa discreta no canto da tela, sempre por cima, com a tarefa, o timer, pausar e finalizar"
               className="rounded-lg px-4 py-2 text-sm text-suave hover:bg-etiqueta hover:text-tinta"
             >
-              Mini-janela
+              Overlay no canto
             </button>
+          </div>
+          <div className="mt-3">
+            <SeletorSom {...som} />
           </div>
         </section>
       ) : (

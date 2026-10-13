@@ -60,7 +60,8 @@ export async function encerrarFoco(
   );
   const concluido = motivo === "concluido";
   await gravarCampos(foco.item.id, { status: concluido ? "feito" : "pausado" });
-  return concluido ? registrarEvento(foco.item.id, "concluido", { de: "em_foco" }, quando) : null;
+  // Ao concluir, a nota é a mensagem de encerramento (opcional, do overlay de foco).
+  return concluido ? registrarEvento(foco.item.id, "concluido", { de: "em_foco", mensagem: nota?.trim() || null }, quando) : null;
 }
 
 /** Põe o item em foco. Quem estava em foco antes precisa ser encerrado antes (ver `trocarFoco`). */

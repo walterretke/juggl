@@ -40,7 +40,10 @@ import { dadosDaDaily, deveAbrirRitual, deveLembrarRitual, ritualFeitoHoje } fro
 import { gerarRecorrentes } from "../db/recorrencias";
 import { resumoDaDaily } from "../dia/daily";
 import { statusParaResponder } from "../pessoas/resumo";
-import { abrirMiniJanela } from "../mini";
+import { abrirMiniJanela, fecharMiniJanela } from "../mini";
+import { acharSom } from "../sons/catalogo";
+import { definirVolume, parar as pararSom, somAtual, tocar as tocarSom } from "../sons/player";
+import { gravarPreferenciasSom, lerOverlayAoFocar, lerPreferenciasSom, type PreferenciasSom } from "../sons/preferencias";
 import Busca, { type Comando } from "./Busca";
 import Icone from "./Icone";
 import { liberarAvisosDoFoco, verificarRegras } from "../regras/verificar";
@@ -184,6 +187,11 @@ export default function Principal() {
   const [instalando, setInstalando] = useState(false);
   const [anotando, setAnotando] = useState(false);
   const [buscando, setBuscando] = useState(false);
+  /** Som do foco: a escolha (com volume e "tocar ao focar") e o que está tocando agora. */
+  const [prefSom, setPrefSom] = useState<PreferenciasSom>({ somId: null, volume: 0.5, aoFocar: true });
+  const [somTocando, setSomTocando] = useState<string | null>(null);
+  const prefSomAtual = useRef(prefSom);
+  prefSomAtual.current = prefSom;
   /** Tarefa aberta no editor (clique no cartão do Meu dia, A nas listas). */
   const [editando, setEditando] = useState<Item | null>(null);
   /** Apresentação do primeiro uso (abre sozinha só na primeira vez). */
@@ -333,7 +341,17 @@ export default function Principal() {
     // Começou um foco: guarda as pontuações e avisa se outro item está bem à frente.
     setAlerta((a) => (a && a.focoId === foco?.item.id ? a : null));
     pontosDoInicio.current = null;
-    if (!foco) return;
+    if (!foco) {
+      pararSom();
+      setSomTocando(null);
+      return;
+    }
+    // Som e overlay do foco, se estiverem ligados.
+    const p = prefSomAtual.current;
+    if (p.aoFocar && p.somId && !somAtual()) tocarSomEscolhido(p).catch(() => {});
+    lerOverlayAoFocar()
+      .then((abrir) => (abrir ? abrirMiniJanela() : undefined))
+      .catch((e) => console.warn("Overlay:", e));
     pontuacoesAgora()
       .then((pontos) => {
         pontosDoInicio.current = pontos;
@@ -541,10 +559,10 @@ export default function Principal() {
   });
 
   /** Põe o item em foco. Se outro estava em foco, pergunta antes onde parou nele. */
-  function focar(item: Item) {
+  function focar(item: Item, irParaAgora = true) {
     const trocar = async (nota: string | null) => {
       await trocarFoco(item, foco, nota);
-      setLista("agora");
+      if (irParaAgora) setLista("agora");
       await carregar();
     };
     if (foco && foco.item.id !== item.id) {
@@ -569,9 +587,72 @@ export default function Principal() {
     });
   }
 
-  async function concluirFoco() {
+  /** Toca o som escolhido; sem internet para a rádio, avisa. */
+  async function tocarSomEscolhido(p: PreferenciasSom) {
+    const som = acharSom(p.somId);
+    if (!som) return;
+    try {
+      await tocarSom(som, p.volume);
+      setSomTocando(som.id);
+    } catch (e) {
+      setSomTocando(null);
+      mostrarAviso(String(e).replace(/^Error: /, ""));
+      throw e;
+    }
+  }
+
+  function alternarSom() {
+    if (somAtual()) {
+      pararSom();
+      setSomTocando(null);
+    } else if (prefSom.somId) {
+      tocarSomEscolhido(prefSom).catch(() => {});
+    } else {
+      mostrarAviso("Escolha um som no Agora ou em Fazendo agora.");
+    }
+  }
+
+  function mudarPrefSom(p: PreferenciasSom) {
+    const trocou = p.somId !== prefSom.somId;
+    setPrefSom(p);
+    gravarPreferenciasSom(p).catch((e) => setErro(String(e)));
+    definirVolume(p.volume);
+    if (!trocou) return;
+    if (!p.somId) {
+      pararSom();
+      setSomTocando(null);
+    } else if (foco || somAtual()) {
+      tocarSomEscolhido(p).catch(() => {});
+    }
+  }
+
+  useEffect(() => {
+    lerPreferenciasSom()
+      .then(setPrefSom)
+      .catch(() => {});
+  }, []);
+
+  // O overlay (outra janela) pede o estado do som e liga ou desliga por eventos.
+  useEffect(() => {
+    emit("som:estado", { tocando: somTocando, escolhido: prefSom.somId }).catch(() => {});
+  }, [somTocando, prefSom.somId]);
+  const alternarSomAtual = useRef(alternarSom);
+  alternarSomAtual.current = alternarSom;
+  useEffect(() => {
+    const pararA = listen("som:alternar", () => alternarSomAtual.current());
+    const pararB = listen("som:pedir-estado", () =>
+      emit("som:estado", { tocando: somAtual(), escolhido: prefSomAtual.current.somId }).catch(() => {}),
+    );
+    return () => {
+      pararA.then((f) => f());
+      pararB.then((f) => f());
+    };
+  }, []);
+
+  async function concluirFoco(mensagem: string | null = null) {
     if (!foco) return;
-    const evento = await encerrarFoco(foco, "concluido");
+    const evento = await encerrarFoco(foco, "concluido", mensagem);
+    fecharMiniJanela().catch(() => {});
     // Desfazer devolve a tarefa aberta (o timer já parou e as horas ficam contadas).
     if (evento) desfazer.current = [...desfazer.current, { itemId: foco.item.id, anterior: { status: "a_fazer" as const }, eventos: [evento] }].slice(-MAX_DESFAZER);
     mostrarAviso("Tarefa concluída.", true);
@@ -596,6 +677,25 @@ export default function Principal() {
     const destino = destinoAoRestaurar(item);
     return aplicar(item, { status: destino }, `Restaurada em ${NOME_LISTA[destino]}`);
   }
+
+  // Overlay de foco: Finalizar (com a mensagem de encerramento opcional) e Retomar depois de pausar.
+  const concluirFocoAtual = useRef(concluirFoco);
+  concluirFocoAtual.current = concluirFoco;
+  const focarAtual = useRef<(item: Item) => void>(() => {});
+  focarAtual.current = (item) => focar(item, false);
+  useEffect(() => {
+    const pararA = listen<{ mensagem: string | null }>("overlay:concluir", ({ payload }) => {
+      concluirFocoAtual.current(payload.mensagem).catch((e) => setErro(String(e)));
+    });
+    const pararB = listen<{ itemId: string }>("overlay:retomar", async ({ payload }) => {
+      const item = await lerItem(payload.itemId);
+      if (item && item.status !== "feito" && item.status !== "arquivado") focarAtual.current(item);
+    });
+    return () => {
+      pararA.then((f) => f());
+      pararB.then((f) => f());
+    };
+  }, []);
 
   // "Pausar" no menu da bandeja: pausa direto, sem nota, porque a janela pode estar escondida.
   const focoAtual = useRef(foco);
@@ -635,7 +735,7 @@ export default function Principal() {
     try {
       await abrirMiniJanela();
     } catch (e) {
-      mostrarAviso(`Não consegui abrir a mini-janela: ${e}`);
+      mostrarAviso(`Não consegui abrir o overlay de foco: ${e}`);
     }
   }
 
@@ -662,7 +762,8 @@ export default function Principal() {
     ...TELAS.map((t) => ({ nome: `Ir para ${NOME_TELA[t]}`, acao: () => trocarLista(t) })),
     { nome: "Nova tarefa", tecla: "C", acao: () => invoke("abrir_captura") },
     { nome: "Copiar o resumo da daily", acao: () => copiarDaily() },
-    { nome: "Abrir a mini-janela de foco", acao: () => abrirMini() },
+    { nome: "Abrir o overlay de foco", acao: () => abrirMini() },
+    { nome: somTocando ? "Parar o som do foco" : "Tocar o som do foco", acao: () => alternarSom() },
     ...(foco ? [{ nome: `Pausar ${foco.item.titulo}`, tecla: "P", acao: () => pausar() }] : []),
     { nome: "Anotar o que irrita", tecla: "!", acao: () => setAnotando(true) },
     { nome: "Configurações", tecla: ",", acao: () => setConfigAberta(true) },
@@ -931,6 +1032,8 @@ export default function Principal() {
     };
   }
 
+  const propsSom = { preferencias: prefSom, tocando: somTocando, aoMudar: mudarPrefSom, aoAlternar: alternarSom };
+
   const botaoCapturar = (
     <button
       type="button"
@@ -1155,6 +1258,7 @@ export default function Principal() {
               aoArrastar={(item) => (arrastado.current = item)}
               aoCopiarDaily={copiarDaily}
               aoAbrir={setEditando}
+              som={propsSom}
               atalhoCaptura={rotuloAtalho(atalho)}
             />
           )}
@@ -1203,6 +1307,7 @@ export default function Principal() {
               aoCobrar={() => foco && cobrar(foco.item)}
               aoPlanejar={() => trocarLista("dia")}
               aoEditar={() => foco && setEditando(foco.item)}
+              som={propsSom}
               aoAbrirMini={abrirMini}
             />
           )}
@@ -1360,7 +1465,7 @@ export default function Principal() {
                 <Dica teclas="X">concluir</Dica>
                 <Dica teclas="1 2 3">focar uma das próximas</Dica>
                 <Dica teclas="B">cobrou de novo</Dica>
-                <Dica teclas="D">descrição</Dica>
+                <Dica teclas="D">editar</Dica>
                 <Dica teclas="O">abrir link</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
               </>
@@ -1376,7 +1481,7 @@ export default function Principal() {
                 <Dica teclas={prioridades.length > 1 ? `1–${Math.min(prioridades.length, 9)}` : "1"}>prioridade</Dica>
                 <Dica teclas="#">projeto</Dica>
                 <Dica teclas="@">quem pediu</Dica>
-                <Dica teclas="D">descrição</Dica>
+                <Dica teclas="D">editar</Dica>
                 <Dica teclas="M">prometi para</Dica>
                 <Dica teclas="B">cobrou de novo</Dica>
                 <Dica teclas="X">concluir</Dica>
@@ -1559,8 +1664,8 @@ function CartaoFoco({ foco, ativo, alvo, arrasto, aoAbrir, aoPausar, aoAbrirMini
         </button>
         <button
           type="button"
-          title="Mini-janela sempre por cima"
-          aria-label="Abrir a mini-janela de foco"
+          title="Overlay discreto no canto da tela"
+          aria-label="Abrir o overlay de foco"
           onClick={aoAbrirMini}
           className="rounded-md p-1 text-suave hover:bg-etiqueta hover:text-tinta"
         >

@@ -11,6 +11,7 @@ import SecaoRecorrentes from "./SecaoRecorrentes";
 import { CHAVE_INATIVIDADE, lerLimiteInatividade } from "../db/foco";
 import { rotuloAtalho } from "./origens";
 import { escolherTema, lerTema, NOME_TEMA, type Tema } from "../tema";
+import { gravarOverlayAoFocar, lerOverlayAoFocar } from "../sons/preferencias";
 
 interface Props {
   atalho: string;
@@ -35,12 +36,14 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevo
   const [tema, setTema] = useState<Tema | null>(null);
   const [usarSelecao, setUsarSelecao] = useState(true);
   const [inatividade, setInatividade] = useState("");
+  const [overlayAoFocar, setOverlayAoFocar] = useState(true);
 
   useEffect(() => {
     lerTema().then(setTema);
     getVersion().then(setVersao);
     lerConfig("usar_selecao").then((v) => setUsarSelecao(v !== "nao"));
     lerLimiteInatividade().then((m) => setInatividade(String(m)));
+    lerOverlayAoFocar().then(setOverlayAoFocar);
   }, []);
 
   async function trocarUsarSelecao(usar: boolean) {
@@ -165,6 +168,21 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevo
           O tempo parado não entra nas horas. Use 0 para desligar. No Linux com Wayland o sistema não informa a
           inatividade.
         </p>
+        <label className="mt-3 flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={overlayAoFocar}
+            onChange={(e) => {
+              setOverlayAoFocar(e.target.checked);
+              gravarOverlayAoFocar(e.target.checked);
+            }}
+            className="mt-0.5 accent-destaque"
+          />
+          <span>
+            Abrir o overlay no canto da tela quando um foco começar
+            <span className="block text-suave">Uma faixa discreta com o tempo, pausar e finalizar, sempre por cima.</span>
+          </span>
+        </label>
 
         <h3 className="mt-7 text-[15px] font-semibold">Azure DevOps</h3>
         <SecaoDevops aoSincronizar={aoSincronizarDevops} />
