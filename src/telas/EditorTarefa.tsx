@@ -39,9 +39,28 @@ function valoresDoItem(item: Item): ValoresFormulario {
   };
 }
 
+/** Horário na agenda como fica no formulário: dia, início e fim (vazio = sem horário). */
+interface Horario {
+  dia: string;
+  inicio: string;
+  fim: string;
+}
+
+function horarioDoItem(item: Item): Horario {
+  return {
+    dia: item.agenda_inicio?.slice(0, 10) ?? "",
+    inicio: item.agenda_inicio?.slice(11, 16) ?? "",
+    fim: item.agenda_fim?.slice(11, 16) ?? "",
+  };
+}
+
 /** O que mudou no formulário, já como campos do item (pessoa e projeto viram ids). */
-async function mudancasDoEditor(item: Item, valores: ValoresFormulario, descricao: string): Promise<Mudancas> {
+async function mudancasDoEditor(item: Item, valores: ValoresFormulario, descricao: string, horario: Horario): Promise<Mudancas> {
   const mudancas: Mudancas = {};
+  const inicio = horario.dia && horario.inicio ? `${horario.dia}T${horario.inicio}` : null;
+  const fim = inicio && horario.fim && horario.fim > horario.inicio ? `${horario.dia}T${horario.fim}` : null;
+  if (inicio !== item.agenda_inicio) mudancas.agenda_inicio = inicio;
+  if (fim !== item.agenda_fim) mudancas.agenda_fim = fim;
   const titulo = valores.titulo.trim();
   if (titulo && titulo !== item.titulo) mudancas.titulo = titulo;
   const nota = descricao.trim() ? descricao.replace(/\s+$/, "") : null;
@@ -87,6 +106,7 @@ export default function EditorTarefa({
 }: Props) {
   const [valores, setValores] = useState<ValoresFormulario>(() => valoresDoItem(item));
   const [descricao, setDescricao] = useState(item.nota ?? "");
+  const [horario, setHorario] = useState<Horario>(() => horarioDoItem(item));
   const [sugestoes, setSugestoes] = useState<{ pessoas: string[]; projetos: string[] }>({ pessoas: [], projetos: [] });
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
@@ -96,7 +116,9 @@ export default function EditorTarefa({
   }, []);
 
   const mudou =
-    JSON.stringify(valores) !== JSON.stringify(valoresDoItem(item)) || descricao.replace(/\s+$/, "") !== (item.nota ?? "");
+    JSON.stringify(valores) !== JSON.stringify(valoresDoItem(item)) ||
+    descricao.replace(/\s+$/, "") !== (item.nota ?? "") ||
+    JSON.stringify(horario) !== JSON.stringify(horarioDoItem(item));
 
   async function salvar() {
     if (salvando) return;
@@ -106,7 +128,12 @@ export default function EditorTarefa({
     }
     setSalvando(true);
     try {
-      const mudancas = await mudancasDoEditor(item, valores, descricao);
+      if (horario.inicio && !horario.dia) {
+        setErro("Escolha o dia do horário na agenda.");
+        setSalvando(false);
+        return;
+      }
+      const mudancas = await mudancasDoEditor(item, valores, descricao, horario);
       if (Object.keys(mudancas).length > 0) await aoSalvar(mudancas);
       aoFechar();
     } catch (e) {
@@ -177,6 +204,41 @@ export default function EditorTarefa({
             </>
           }
         />
+        <div className="mt-3.5">
+          <span className="block text-xs font-semibold text-suave">Horário na agenda</span>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
+            <input
+              type="date"
+              aria-label="Dia na agenda"
+              value={horario.dia}
+              onChange={(e) => setHorario({ ...horario, dia: e.target.value, inicio: horario.inicio || (e.target.value ? "09:00" : ""), fim: horario.fim || (e.target.value ? "10:00" : "") })}
+              className="rounded-lg border border-linha bg-cartao px-3 py-1 outline-none focus:border-destaque"
+            />
+            {horario.dia && (
+              <>
+                <input
+                  type="time"
+                  aria-label="Início"
+                  value={horario.inicio}
+                  onChange={(e) => setHorario({ ...horario, inicio: e.target.value })}
+                  className="rounded-lg border border-linha bg-cartao px-3 py-1 outline-none focus:border-destaque"
+                />
+                <span className="text-suave">até</span>
+                <input
+                  type="time"
+                  aria-label="Fim"
+                  value={horario.fim}
+                  onChange={(e) => setHorario({ ...horario, fim: e.target.value })}
+                  className="rounded-lg border border-linha bg-cartao px-3 py-1 outline-none focus:border-destaque"
+                />
+                <button type="button" onClick={() => setHorario({ dia: "", inicio: "", fim: "" })} className="rounded-md px-2 py-1 text-[13px] text-suave hover:bg-etiqueta">
+                  Tirar horário
+                </button>
+              </>
+            )}
+            {!horario.dia && <span className="text-[13px] text-apagado">Sem horário: aparece no dia do prazo, na agenda.</span>}
+          </div>
+        </div>
         {erro && <p className="mt-3 text-sm text-atraso">{erro}</p>}
         <div className="mt-4 flex flex-wrap items-center gap-1 border-t border-linha pt-3">
           {item.status !== "em_foco" && item.status !== "feito" && item.status !== "arquivado" && (

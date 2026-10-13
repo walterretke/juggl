@@ -66,6 +66,7 @@ import Regras from "./Regras";
 import MeuDia from "./MeuDia";
 import EditorTarefa from "./EditorTarefa";
 import Fechadas from "./Fechadas";
+import Agenda from "./agenda/Agenda";
 import { destinoAoRestaurar, NOME_LISTA } from "../tarefas/restaurar";
 import { rotuloAtalho } from "./origens";
 
@@ -73,19 +74,20 @@ const MINUTO_MS = 60 * 1000;
 const MAX_DESFAZER = 30;
 
 /** Telas da janela principal: Meu dia (o fluxo do dia), Agora (o foco), as listas, Pessoas e Horas. */
-type Tela = "dia" | "agora" | Lista | "fechadas" | "pessoas" | "horas" | "regras" | "uso";
-const TELAS: Tela[] = ["dia", "agora", "inbox", "a_fazer", "aguardando", "fechadas", "pessoas", "horas", "regras", "uso"];
+type Tela = "dia" | "agenda" | "agora" | Lista | "fechadas" | "pessoas" | "horas" | "regras" | "uso";
+const TELAS: Tela[] = ["dia", "agenda", "agora", "inbox", "a_fazer", "aguardando", "fechadas", "pessoas", "horas", "regras", "uso"];
 /**
  * Grupos da barra lateral; Regras e Uso ficam no rodapé, junto das configurações.
  * Agora não tem botão próprio: o cartão "Em foco", logo abaixo de Meu dia, leva até ele.
  */
 const GRUPOS_MENU: { titulo: string; telas: Tela[] }[] = [
-  { titulo: "Hoje", telas: ["dia"] },
+  { titulo: "Hoje", telas: ["dia", "agenda"] },
   { titulo: "Listas", telas: ["inbox", "a_fazer", "aguardando", "fechadas"] },
   { titulo: "Acompanhar", telas: ["pessoas", "horas"] },
 ];
 const NOME_TELA: Record<Tela, string> = {
   dia: "Meu dia",
+  agenda: "Agenda",
   agora: "Agora",
   inbox: "Caixa de entrada",
   a_fazer: "A fazer",
@@ -807,6 +809,8 @@ export default function Principal() {
       ? "Poucos avisos e certeiros. Ligue, desligue e ajuste cada regra."
       : lista === "uso"
       ? "As 4 semanas de uso real: como está indo e o que irrita."
+      : lista === "agenda"
+      ? "Compromissos e tarefas por dia. Arraste uma tarefa da faixa sem horário para a grade para marcar a hora."
       : lista === "fechadas"
       ? "Tarefas concluídas e arquivadas. Restaurar devolve cada uma para a lista em que estava."
       : lista === "dia"
@@ -1167,6 +1171,17 @@ export default function Principal() {
             />
           )}
 
+          {lista === "agenda" && (
+            <Agenda
+              versao={versao}
+              teclado={!editando && !configAberta && !pedidoNota && !anotando && !buscando && !boasVindas}
+              aoAbrirTarefa={setEditando}
+              aoAplicar={aplicar}
+              aoAvisar={mostrarAviso}
+              aoAlterar={carregar}
+            />
+          )}
+
           {lista === "fechadas" && (
             <Fechadas versao={versao} aoRestaurar={restaurar} aoAbrir={setEditando} aoApagar={apagar} />
           )}
@@ -1304,6 +1319,13 @@ export default function Principal() {
                 <Dica teclas="Espaço">resolvida</Dica>
                 <Dica teclas="Delete">apagar</Dica>
                 <Dica teclas="Ctrl+C">copiar a lista</Dica>
+                <Dica teclas="Tab">trocar tela</Dica>
+              </>
+            ) : lista === "agenda" ? (
+              <>
+                <Dica teclas="← →">trocar período</Dica>
+                <Dica teclas="T">hoje</Dica>
+                <span>Clique num horário para criar, arraste tarefas para marcar a hora</span>
                 <Dica teclas="Tab">trocar tela</Dica>
               </>
             ) : lista === "fechadas" ? (
