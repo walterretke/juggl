@@ -55,6 +55,8 @@ import { instalarAtualizacao, INTERVALO_ATUALIZACAO_MS, procurarAtualizacao } fr
 import { horaDeSincronizar, lerConfigDevops, sincronizarDevops } from "../db/devops";
 import Agora from "./Agora";
 import Configuracoes from "./Configuracoes";
+import BoasVindas from "./BoasVindas";
+import { abrirBoasVindas, marcarBoasVindasVistas } from "../db/boasVindas";
 import Horas from "./Horas";
 import ItemLista, { type CampoEditavel, type Menu } from "./ItemLista";
 import PedidoNota from "./PedidoNota";
@@ -175,6 +177,8 @@ export default function Principal() {
   const [instalando, setInstalando] = useState(false);
   const [anotando, setAnotando] = useState(false);
   const [buscando, setBuscando] = useState(false);
+  /** Apresentação do primeiro uso (abre sozinha só na primeira vez). */
+  const [boasVindas, setBoasVindas] = useState(false);
   /** Item a selecionar quando a lista carregar (vindo da busca global). */
   const selecionarId = useRef<string | null>(null);
   /** Pontuação de cada item quando o foco atual começou, para ver quem passou à frente. */
@@ -222,6 +226,19 @@ export default function Principal() {
       setErro(String(e));
     }
   }, [lista]);
+
+  // Primeira abertura: apresenta o app. Quem já usava fica marcado como visto.
+  useEffect(() => {
+    abrirBoasVindas()
+      .then(setBoasVindas)
+      .catch((e) => console.error("Boas-vindas:", e));
+  }, []);
+
+  function fecharBoasVindas() {
+    setBoasVindas(false);
+    marcarBoasVindasVistas().catch((e) => setErro(String(e)));
+    carregar();
+  }
 
   // Registra o atalho global salvo (ou o padrão) ao abrir o app.
   useEffect(() => {
@@ -502,7 +519,7 @@ export default function Principal() {
   useEffect(() => {
     if (!alerta) return;
     function aoTeclar(e: KeyboardEvent) {
-      if (pedidoNota || configAberta || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (pedidoNota || configAberta || boasVindas || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select")) return;
       const resposta = ({ t: "trocar", c: "continuar", a: "adiar" } as const)[e.key.toLowerCase() as "t" | "c" | "a"];
       if (!resposta) return;
@@ -618,6 +635,7 @@ export default function Principal() {
     ...(foco ? [{ nome: `Pausar ${foco.item.titulo}`, tecla: "P", acao: () => pausar() }] : []),
     { nome: "Anotar o que irrita", tecla: "!", acao: () => setAnotando(true) },
     { nome: "Configurações", tecla: ",", acao: () => setConfigAberta(true) },
+    { nome: "Rever as boas-vindas", acao: () => setBoasVindas(true) },
   ];
 
   // Ctrl+K abre a busca de qualquer tela (menos com outra janela de diálogo aberta).
@@ -625,7 +643,7 @@ export default function Principal() {
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
       if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
-      if (configAberta || pedidoNota || anotando || buscando) return;
+      if (configAberta || pedidoNota || anotando || buscando || boasVindas) return;
       const tecla = e.key.toLowerCase();
       if (tecla === "k") {
         e.preventDefault();
@@ -672,7 +690,7 @@ export default function Principal() {
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
       // # e @ podem vir com AltGr (Ctrl+Alt no Windows) em alguns teclados.
-      if (edicao || configAberta || pedidoNota || menu || anotando || buscando || ((e.ctrlKey || e.metaKey || e.altKey) && e.key !== "#" && e.key !== "@")) return;
+      if (edicao || configAberta || pedidoNota || menu || anotando || buscando || boasVindas || ((e.ctrlKey || e.metaKey || e.altKey) && e.key !== "#" && e.key !== "@")) return;
       // Digitando num campo (busca, código do projeto): as letras são texto, não atalhos.
       if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select")) return;
       const item = itens?.[selecionado];
@@ -740,7 +758,7 @@ export default function Principal() {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [edicao, configAberta, pedidoNota, menu, anotando, buscando, itens, selecionado, lista, aplicar, foco, proximas, prioridades, atualizacao]);
+  }, [edicao, configAberta, pedidoNota, menu, anotando, buscando, boasVindas, itens, selecionado, lista, aplicar, foco, proximas, prioridades, atualizacao]);
 
   // Mantém o item selecionado visível ao navegar pelo teclado.
   useEffect(() => {
@@ -1370,10 +1388,22 @@ export default function Principal() {
             setAtualizacao(nova);
             return `Versão ${nova.version} disponível: use o aviso no topo da tela.`;
           }}
+          aoReverBoasVindas={() => {
+            setConfigAberta(false);
+            setBoasVindas(true);
+          }}
           aoFechar={() => {
             setConfigAberta(false);
             carregar();
           }}
+        />
+      )}
+      {boasVindas && (
+        <BoasVindas
+          atalho={atalho}
+          aoMudarAtalho={setAtalho}
+          aoSincronizarDevops={() => sincronizarAzureAgora(true)}
+          aoFechar={fecharBoasVindas}
         />
       )}
     </div>
