@@ -90,21 +90,18 @@ export interface Alteracao {
 
 type Linha = Record<string, unknown>;
 
-/** O que `apagarItem` tirou do banco (e o que criou), para desfazer. */
+/** O que `apagarItem` tirou do banco, para desfazer. */
 export interface CopiaApagada {
   item: Linha;
   eventos: Linha[];
   notificacoes: Linha[];
-  /** Lançamentos à mão que estavam ligados à tarefa e ficaram soltos. */
-  manuaisSoltos: { id: string; descricao: unknown }[];
-  /** Sessões de foco que viraram lançamentos à mão para as horas não sumirem. */
-  manuaisCriados: string[];
-  /** Checklist e anexos da tarefa. */
+  /** Checklist, anexos e lançamentos de horas da tarefa. */
   filhos: { tabela: string; linhas: Linha[] }[];
 }
 
 /** Tabelas com linhas que pertencem a uma tarefa e vão embora junto com ela. */
-const TABELAS_FILHAS = ["subtarefa", "anexo"];
+/** Apagadas junto com a tarefa (lançamentos de horas inclusive: tarefa apagada não conta nas horas). */
+const TABELAS_FILHAS = ["subtarefa", "anexo", "sessao_manual"];
 
 /** Id do nome igual a `nome`, ignorando maiúsculas, acentos, espaços e _ ("@carla_dias" acha "Carla Dias"). */
 async function buscarPorNome(tabela: "pessoa" | "projeto", coluna: string, nome: string): Promise<string | null> {
@@ -137,16 +134,6 @@ export async function buscarOuCriarProjeto(nome: string): Promise<string> {
 
 /** Coluna do quadro em que uma tarefa nova entra. */
 export type Destino = "inbox" | "hoje" | "a_fazer";
-
-/** Quantas tarefas abertas estão planejadas para o dia (as "3 de hoje"). */
-export async function contarDoDia(dia: string): Promise<number> {
-  const db = await getDb();
-  const [linha] = await db.select<{ n: number }[]>(
-    "SELECT COUNT(*) AS n FROM item WHERE dia_planejado = $1 AND status IN ('a_fazer', 'pausado', 'em_foco')",
-    [dia],
-  );
-  return linha?.n ?? 0;
-}
 
 /**
  * Grava a tarefa nova na coluna escolhida (caixa de entrada, Hoje ou A fazer) e registra o
@@ -373,44 +360,19 @@ export async function apagarItem(item: Item): Promise<Alteracao> {
   const filhos: CopiaApagada["filhos"] = [];
   for (const tabela of TABELAS_FILHAS)
     filhos.push({ tabela, linhas: await db.select<Linha[]>(`SELECT * FROM ${tabela} WHERE item_id = $1`, [item.id]) });
-  const manuaisSoltos = await db.select<{ id: string; descricao: unknown }[]>(
-    "SELECT id, descricao FROM sessao_manual WHERE item_id = $1",
-    [item.id],
-  );
 
-  const manuaisCriados: string[] = [];
-  const agora = agoraIso();
-  for (const e of eventos) {
-    if (e.tipo !== "foco_fim") continue;
-    const inicio = (JSON.parse(String(e.dados ?? "{}")) as { inicio?: string }).inicio;
-    if (!inicio) continue;
-    const id = novoId();
-    await db.execute(
-      `INSERT INTO sessao_manual (id, item_id, projeto_id, descricao, inicio, fim, criado_em) VALUES ($1, NULL, $2, $3, $4, $5, $6)`,
-      [id, item.projeto_id, item.titulo, inicio, e.timestamp, agora],
-    );
-    manuaisCriados.push(id);
-  }
-  await db.execute("UPDATE sessao_manual SET item_id = NULL, descricao = COALESCE(descricao, $1) WHERE item_id = $2", [
-    item.titulo,
-    item.id,
-  ]);
   await db.execute("DELETE FROM notificacao WHERE item_id = $1", [item.id]);
   for (const tabela of TABELAS_FILHAS) await db.execute(`DELETE FROM ${tabela} WHERE item_id = $1`, [item.id]);
   await db.execute("DELETE FROM evento WHERE item_id = $1", [item.id]);
   await db.execute("DELETE FROM item WHERE id = $1", [item.id]);
-  return { itemId: item.id, anterior: {}, eventos: [], copia: { item: linha, eventos, notificacoes, manuaisSoltos, manuaisCriados, filhos } };
+  return { itemId: item.id, anterior: {}, eventos: [], copia: { item: linha, eventos, notificacoes, filhos } };
 }
 
 async function restaurarApagado(copia: CopiaApagada): Promise<void> {
-  const db = await getDb();
   await inserirLinha("item", copia.item);
   for (const e of copia.eventos) await inserirLinha("evento", e);
   for (const n of copia.notificacoes) await inserirLinha("notificacao", n);
   for (const { tabela, linhas } of copia.filhos) for (const l of linhas) await inserirLinha(tabela, l);
-  for (const s of copia.manuaisSoltos)
-    await db.execute("UPDATE sessao_manual SET item_id = $1, descricao = $2 WHERE id = $3", [copia.item.id, s.descricao, s.id]);
-  for (const id of copia.manuaisCriados) await db.execute("DELETE FROM sessao_manual WHERE id = $1", [id]);
 }
 
 /** Concluídas e arquivadas, as mexidas por último primeiro. */

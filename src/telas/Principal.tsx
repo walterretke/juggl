@@ -915,7 +915,7 @@ export default function Principal() {
       : lista === "fechadas"
       ? "Tarefas concluídas e arquivadas. Restaurar devolve cada uma para a lista em que estava."
       : lista === "dia"
-      ? "O que chegou, as 3 de hoje, o que você está fazendo e o que já foi feito. Clique num cartão para abrir, arraste para mudar de coluna."
+      ? "O que chegou, o que é para hoje, o que você está fazendo e o que já foi feito. Clique num cartão para abrir, arraste para mudar de coluna."
       : lista === "pessoas"
       ? "Tudo que cada pessoa pediu, para responder quem está cobrando."
       : lista === "agora"

@@ -17,8 +17,8 @@ interface Props {
    */
   modo: "captura" | "editor";
   aoSalvar?: () => void;
-  /** Altura máxima da área de texto antes de rolar. */
-  alturaMaxima?: string;
+  /** Altura inicial da área de texto (dá para arrastar o canto para mudar). */
+  alturaInicial?: string;
 }
 
 function markdownDe(editor: Editor): string {
@@ -32,7 +32,7 @@ const ativo = "bg-etiqueta text-tinta";
  * Descrição com formatação: negrito, itálico, tachado e listas, pela barra ou pelos atalhos
  * de sempre (Ctrl+B, Ctrl+I, "- " começa uma lista). Grava Markdown.
  */
-export default function TextoRico({ id, valor, aoMudar, dica, modo, aoSalvar, alturaMaxima = "9rem" }: Props) {
+export default function TextoRico({ id, valor, aoMudar, dica, modo, aoSalvar, alturaInicial = "7rem" }: Props) {
   const salvar = useRef(aoSalvar);
   salvar.current = aoSalvar;
   const ultimo = useRef(valor);
@@ -62,8 +62,9 @@ export default function TextoRico({ id, valor, aoMudar, dica, modo, aoSalvar, al
     editorProps: {
       attributes: {
         ...(id ? { id } : {}),
-        class: "texto-rico outline-none px-3 py-1.5 text-sm leading-5 overflow-y-auto",
-        style: `max-height: ${alturaMaxima}`,
+        // Começa com uma altura confortável; o canto de baixo arrasta para aumentar ou diminuir.
+        class: "texto-rico outline-none px-3 py-1.5 text-sm leading-5 overflow-y-auto resize-y",
+        style: `height: ${alturaInicial}; min-height: 3.5rem`,
       },
     },
     onUpdate: ({ editor }) => {

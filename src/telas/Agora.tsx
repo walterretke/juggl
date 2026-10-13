@@ -26,7 +26,7 @@ interface Props {
   aoAbrirMini: () => void;
 }
 
-/** Tela "Agora": uma única coisa em destaque, o timer e as 3 de hoje (ou sugestões, sem plano). */
+/** Tela "Agora": uma única coisa em destaque, o timer e as próximas de hoje (ou sugestões, sem plano). */
 export default function Agora({
   foco,
   proximas,
@@ -166,7 +166,7 @@ export default function Agora({
       )}
 
       <div className="mt-9 mb-3 flex items-baseline gap-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-apagado">{doDia ? "Suas 3 de hoje" : "Sugestões"}</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-apagado">{doDia ? "Próximas de hoje" : "Sugestões"}</h2>
         {!doDia && proximas.length > 0 && (
           <button type="button" onClick={aoPlanejar} className="text-[13px] font-semibold text-destaque hover:underline">
             Planejar o dia

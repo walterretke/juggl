@@ -9,7 +9,6 @@ import {
   fecharDia,
   itensDoQuadro,
   marcarDiaPlanejado,
-  MAX_DO_DIA,
   type Destino,
 } from "../db/ritual";
 import { montarQuadro, NOME_QUANDO, proximoQuando, quandoPadrao } from "../ritual/quadro";
@@ -132,7 +131,7 @@ async function horasDeHoje(agora: Date): Promise<number> {
 }
 
 /**
- * Meu dia: o dia como um fluxo, em colunas. O que chegou, as 3 de hoje (cada uma com um
+ * Meu dia: o dia como um fluxo, em colunas. O que chegou, o que é para hoje (cada uma com um
  * "quando"), o que está em foco e o que já foi feito; o resto de A fazer fica em Depois.
  * Planejar o dia é arrastar cartões para Hoje; Fechar o dia decide o destino do que sobrou.
  */
@@ -193,17 +192,13 @@ export default function MeuDia({
   const sessao = foco ? agora - new Date(foco.inicio).getTime() : 0;
   const totalDepois = quadro.depois.reduce((n, g) => n + g.itens.length, 0);
   // Depois fica aberto enquanto Hoje tem vaga, para escolher dali; depois recolhe.
-  const mostrarDepois = depoisAberto ?? quadro.hoje.length < MAX_DO_DIA;
+  const mostrarDepois = depoisAberto ?? quadro.hoje.length === 0;
 
   const etapaFeita = [quadro.chegou.length === 0, planejado, fechado, fechado];
   const etapaAtual = etapaFeita.findIndex((f) => !f);
 
   async function planejar(item: Item) {
     if (item.dia_planejado === diaHoje && item.status !== "inbox") return;
-    if (quadro.hoje.length >= MAX_DO_DIA) {
-      aoAvisar(`Só ${MAX_DO_DIA} por dia. Tire uma de Hoje antes.`);
-      return;
-    }
     const mudancas: Mudancas = { dia_planejado: diaHoje, quando: item.quando ?? quandoPadrao(new Date()) };
     if (item.status === "inbox" || item.status === "feito") mudancas.status = "a_fazer";
     await marcarDiaPlanejado();
@@ -471,8 +466,8 @@ export default function MeuDia({
         </div>
 
         <div {...alvoDaColuna("hoje")} className={classeColuna("hoje", "bg-cartao shadow-[0_0_0_1px_var(--color-linha)]")}>
-          {tituloColuna("Hoje", `${quadro.hoje.length} de ${MAX_DO_DIA}`)}
-          <p className="px-1 text-[13px] text-suave">As 3 do dia. Clique no "quando" para trocar.</p>
+          {tituloColuna("Hoje", String(quadro.hoje.length))}
+          <p className="px-1 text-[13px] text-suave">O que você vai fazer hoje. Clique no "quando" para trocar.</p>
           {quadro.hoje.map((item, i) =>
             item.status === "em_foco" ? (
               <p key={item.id} className="flex items-start gap-2 rounded-xl border border-dashed border-destaque px-3 py-2 text-[13px] text-destaque-tinta">
@@ -498,11 +493,11 @@ export default function MeuDia({
               </Cartao>
             ),
           )}
-          {Array.from({ length: Math.max(0, MAX_DO_DIA - quadro.hoje.length) }, (_, i) => (
-            <p key={i} className="rounded-xl border-[1.5px] border-dashed border-linha px-3 py-2.5 text-[13px] text-apagado">
-              Vaga livre. Arraste um item para cá.
+          {quadro.hoje.length === 0 && (
+            <p className="rounded-xl border-[1.5px] border-dashed border-linha px-3 py-2.5 text-[13px] text-apagado">
+              Arraste itens para cá.
             </p>
-          ))}
+          )}
           {!planejado && (
             <button
               type="button"

@@ -7,9 +7,7 @@ import { reconhecerLink } from "../captura/links";
 import { marcacoesDoTitulo, parseCaptura, type Captura as DadosCaptura, type OpcaoPrioridade } from "../captura/parser";
 import { resolverTitulo, tituloPadrao } from "../captura/titulo";
 import { avancarNumeroAtividade, gravarConfig, lerConfig, lerNumeroAtividade } from "../db/config";
-import { contarDoDia, criarItem, listarSugestoes, type Destino } from "../db/itens";
-import { MAX_DO_DIA } from "../db/ritual";
-import { dataLocalIso } from "../captura/datas";
+import { criarItem, listarSugestoes, type Destino } from "../db/itens";
 import { quandoPadrao } from "../ritual/quadro";
 import { listarPrioridades, type Prioridade } from "../db/prioridades";
 import Avancada from "./captura/Avancada";
@@ -201,10 +199,6 @@ export default function Captura() {
     }
     setSalvando(true);
     try {
-      if (destino === "hoje" && (await contarDoDia(dataLocalIso(new Date()))) >= MAX_DO_DIA) {
-        setErro(`Hoje já tem ${MAX_DO_DIA} tarefas. Escolha Chegou ou A fazer.`);
-        return;
-      }
       const duracao = momentoAtalho.current ? Date.now() - momentoAtalho.current : null;
       await criarItem({ ...captura, titulo: titulo.titulo }, duracao, descricao, destino, quandoPadrao(new Date()));
       if (titulo.usouPadrao) await avancarNumeroAtividade(numero);

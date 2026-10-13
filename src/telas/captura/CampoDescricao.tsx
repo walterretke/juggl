@@ -30,7 +30,7 @@ export default function CampoDescricao({
         dica={dica}
         modo={modo}
         aoSalvar={aoSalvar}
-        alturaMaxima={modo === "editor" ? "16rem" : "8rem"}
+        alturaInicial={modo === "editor" ? "12rem" : "7rem"}
       />
     </div>
   );

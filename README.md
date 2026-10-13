@@ -94,7 +94,7 @@ A tela **Agenda** mostra mês, semana ou dia, como o Google Agenda. Tarefas com 
 
 ## Fechadas e apagar
 
-**Fechadas** lista as tarefas concluídas e arquivadas, com busca; "Restaurar" devolve para a coluna de onde a tarefa saiu. `Delete` (ou a lixeira) apaga uma tarefa, e `Z` desfaz; as horas de foco dela continuam contando nas Horas da semana.
+**Fechadas** lista as tarefas concluídas e arquivadas, com busca; "Restaurar" devolve para a coluna de onde a tarefa saiu. `Delete` (ou a lixeira) apaga uma tarefa, e `Z` desfaz. Uma tarefa apagada sai das Horas da semana, do projeto e de todos os totais.
 
 ## Anexos
 
@@ -103,7 +103,7 @@ No editor da tarefa, "Anexar arquivo", arrastar ou colar (`Ctrl+V`) adiciona ane
 ## Ritual da manhã
 
 - Na primeira abertura do dia, com algo pendente, o Juggl abre o **Ritual da manhã**: o que vence até amanhã (prazo ou promessa), o que alguém cobrou, o que ficou pausado, o resto de A fazer e a caixa de entrada.
-- Escolha até 3 para o dia com clique, arrastando para o quadro Hoje ou com `Espaço` (setas andam). Arraste dentro do Hoje para mudar a ordem. Depois, **Começar o dia** (`Enter`); `Esc` pula. As escolhidas ganham a etiqueta "Do dia" e ficam no topo de A fazer e das próximas do Agora.
+- Escolha o que vai fazer no dia com clique, arrastando para o quadro Hoje ou com `Espaço` (setas andam). Arraste dentro do Hoje para mudar a ordem. Depois, **Começar o dia** (`Enter`); `Esc` pula. As escolhidas ganham a etiqueta "Do dia" e ficam no topo de A fazer e das próximas do Agora.
 - Dá para pular. Se às 10h o ritual ainda não foi feito, o app lembra uma vez, com um aviso no topo e uma notificação (o horário se muda em Regras).
 - **Copiar para a daily** (`Ctrl+C` em Meu dia) copia o que foi concluído no dia útil anterior (na segunda, a sexta), o que é para hoje e o que está aguardando alguém, pronto para colar na reunião.
 - Com o banco vazio (a primeira vez de um colega), Meu dia mostra três passos: capturar, planejar e focar.
@@ -126,7 +126,7 @@ No editor da tarefa, "Anexar arquivo", arrastar ou colar (`Ctrl+V`) adiciona ane
 
 ## Alerta de prioridade errada
 
-- Cada item aberto tem uma pontuação de urgência, sem caixa-preta: prazo ou promessa (atrasado 50, hoje 40, amanhã 25, esta semana 10), 15 por cobrança (até 45), 2 por dia parado (até 20), prioridade contada de baixo (a última 0, a penúltima 10, as de cima 20) e 15 se é uma das 3 do dia.
+- Cada item aberto tem uma pontuação de urgência, sem caixa-preta: prazo ou promessa (atrasado 50, hoje 40, amanhã 25, esta semana 10), 15 por cobrança (até 45), 2 por dia parado (até 20), prioridade contada de baixo (a última 0, a penúltima 10, as de cima 20) e 15 se está em Hoje.
 - Ao começar um foco, se outro item está 30 pontos ou mais à frente, aparece no topo: "Talvez você devesse focar em Relatório de acessos: vence hoje e Carlos já cobrou 2 vezes". Durante o foco, avisa também quando uma cobrança nova ou um prazo chegando faz outro item passar à frente. Com a janela escondida, vem como notificação.
 - Três respostas, com clique ou tecla: **Trocar agora** (`T`), **Continuar** (`C`, fica registrado; só avisa de novo se algum item ficar mais urgente) e **Adiar 30 min** (`A`). "Por quê?" mostra a conta dos dois itens.
 - Nunca mais de uma vez por hora para o mesmo par. Liga e desliga na tela Regras (`P`).
