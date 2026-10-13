@@ -1,8 +1,9 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { dataLocalIso, formatarDuracao } from "../captura/datas";
+import { dataLocalIso, formatarCronometro, formatarDuracao } from "../captura/datas";
 import { interpretarPrazo } from "../captura/parser";
 import { agendarBackupDiario } from "../db/backup";
 import { ATALHO_PADRAO, lerConfig } from "../db/config";
@@ -18,20 +19,33 @@ import {
 } from "../db/foco";
 import {
   alterarItem,
+  apagarItem,
   buscarOuCriarPessoa,
   buscarOuCriarProjeto,
   contarPorLista,
   desfazerAlteracao,
+  devolverAguardando,
+  lerItem,
   listarItens,
   listarSugestoes,
   registrarCobranca,
   type Alteracao,
   type Item,
+  type ItemBusca,
   type Lista,
   type Mudancas,
 } from "../db/itens";
 import { listarPrioridades, type Prioridade } from "../db/prioridades";
-import { deveAbrirRitual, deveLembrarRitual, ritualFeitoHoje } from "../db/ritual";
+import { dadosDaDaily, deveAbrirRitual, deveLembrarRitual, ritualFeitoHoje } from "../db/ritual";
+import { gerarRecorrentes } from "../db/recorrencias";
+import { resumoDaDaily } from "../dia/daily";
+import { statusParaResponder } from "../pessoas/resumo";
+import { abrirMiniJanela, fecharMiniJanela } from "../mini";
+import { acharSom } from "../sons/catalogo";
+import { definirVolume, parar as pararSom, somAtual, tocar as tocarSom } from "../sons/player";
+import { gravarPreferenciasSom, lerOverlayAoFocar, lerPreferenciasSom, type PreferenciasSom } from "../sons/preferencias";
+import Busca, { type Comando } from "./Busca";
+import Icone from "./Icone";
 import { liberarAvisosDoFoco, verificarRegras } from "../regras/verificar";
 import { notificar } from "../regras/notificar";
 import type { Urgencia } from "../regras/urgencia";
@@ -45,31 +59,43 @@ import { instalarAtualizacao, INTERVALO_ATUALIZACAO_MS, procurarAtualizacao } fr
 import { horaDeSincronizar, lerConfigDevops, sincronizarDevops } from "../db/devops";
 import Agora from "./Agora";
 import Configuracoes from "./Configuracoes";
+import BoasVindas from "./BoasVindas";
+import { abrirBoasVindas, marcarBoasVindasVistas } from "../db/boasVindas";
 import Horas from "./Horas";
 import ItemLista, { type CampoEditavel, type Menu } from "./ItemLista";
 import PedidoNota from "./PedidoNota";
 import Pessoas from "./Pessoas";
 import Regras from "./Regras";
 import MeuDia from "./MeuDia";
+import EditorTarefa from "./EditorTarefa";
+import Fechadas from "./Fechadas";
+import Agenda from "./agenda/Agenda";
+import { destinoAoRestaurar, NOME_LISTA } from "../tarefas/restaurar";
 import { rotuloAtalho } from "./origens";
 
 const MINUTO_MS = 60 * 1000;
 const MAX_DESFAZER = 30;
 
-/** Telas da janela principal: Meu dia (o fluxo do dia), Agora (o foco), as duas listas, Pessoas e Horas. */
-type Tela = "dia" | "agora" | Lista | "pessoas" | "horas" | "regras" | "uso";
-const TELAS: Tela[] = ["dia", "agora", "inbox", "a_fazer", "pessoas", "horas", "regras", "uso"];
-/** Grupos da barra lateral; Regras e Uso ficam no rodapé, junto das configurações. */
+/** Telas da janela principal: Meu dia (o fluxo do dia), Agora (o foco), as listas, Pessoas e Horas. */
+type Tela = "dia" | "agenda" | "agora" | Lista | "fechadas" | "pessoas" | "horas" | "regras" | "uso";
+const TELAS: Tela[] = ["dia", "agenda", "agora", "inbox", "a_fazer", "aguardando", "fechadas", "pessoas", "horas", "regras", "uso"];
+/**
+ * Grupos da barra lateral; Regras e Uso ficam no rodapé, junto das configurações.
+ * Agora não tem botão próprio: o cartão "Em foco", logo abaixo de Meu dia, leva até ele.
+ */
 const GRUPOS_MENU: { titulo: string; telas: Tela[] }[] = [
-  { titulo: "Hoje", telas: ["dia", "agora"] },
-  { titulo: "Listas", telas: ["inbox", "a_fazer"] },
+  { titulo: "Hoje", telas: ["dia", "agenda"] },
+  { titulo: "Listas", telas: ["inbox", "a_fazer", "aguardando", "fechadas"] },
   { titulo: "Acompanhar", telas: ["pessoas", "horas"] },
 ];
 const NOME_TELA: Record<Tela, string> = {
   dia: "Meu dia",
+  agenda: "Agenda",
   agora: "Agora",
   inbox: "Caixa de entrada",
   a_fazer: "A fazer",
+  aguardando: "Aguardando",
+  fechadas: "Fechadas",
   pessoas: "Pessoas",
   horas: "Horas da semana",
   regras: "Regras",
@@ -77,7 +103,7 @@ const NOME_TELA: Record<Tela, string> = {
 };
 
 function ehLista(tela: Tela): tela is Lista {
-  return tela === "inbox" || tela === "a_fazer";
+  return tela === "inbox" || tela === "a_fazer" || tela === "aguardando";
 }
 const MAX_PROXIMAS = 3;
 const MAX_TITULO_BANDEJA = 40;
@@ -93,7 +119,7 @@ const ROTULO_CAMPO: Record<CampoEditavel, string> = {
   projeto: "Projeto (vazio tira)",
   pessoa: "Quem pediu (vazio tira)",
   titulo: "Título",
-  nota: "Descrição (Enter salva, Shift+Enter quebra a linha, vazio tira)",
+  nota: "Descrição",
 };
 
 
@@ -135,7 +161,7 @@ export default function Principal() {
   const primeiraCarga = useRef(true);
   const ultimoPulso = useRef(Date.now());
   const [itens, setItens] = useState<Item[] | null>(null);
-  const [contagem, setContagem] = useState<Record<Lista, number>>({ inbox: 0, a_fazer: 0 });
+  const [contagem, setContagem] = useState<Record<Lista, number>>({ inbox: 0, a_fazer: 0, aguardando: 0 });
   const [selecionado, setSelecionado] = useState(0);
   const [edicao, setEdicao] = useState<Edicao | null>(null);
   const [configAberta, setConfigAberta] = useState(false);
@@ -160,6 +186,18 @@ export default function Principal() {
   const [atualizacao, setAtualizacao] = useState<Update | null>(null);
   const [instalando, setInstalando] = useState(false);
   const [anotando, setAnotando] = useState(false);
+  const [buscando, setBuscando] = useState(false);
+  /** Som do foco: a escolha (com volume e "tocar ao focar") e o que está tocando agora. */
+  const [prefSom, setPrefSom] = useState<PreferenciasSom>({ somId: null, volume: 0.5, aoFocar: true });
+  const [somTocando, setSomTocando] = useState<string | null>(null);
+  const prefSomAtual = useRef(prefSom);
+  prefSomAtual.current = prefSom;
+  /** Tarefa aberta no editor (clique no cartão do Meu dia, A nas listas). */
+  const [editando, setEditando] = useState<Item | null>(null);
+  /** Apresentação do primeiro uso (abre sozinha só na primeira vez). */
+  const [boasVindas, setBoasVindas] = useState(false);
+  /** Item a selecionar quando a lista carregar (vindo da busca global). */
+  const selecionarId = useRef<string | null>(null);
   /** Pontuação de cada item quando o foco atual começou, para ver quem passou à frente. */
   const pontosDoInicio = useRef<Map<string, Urgencia> | null>(null);
   const desfazer = useRef<Alteracao[]>([]);
@@ -196,12 +234,28 @@ export default function Principal() {
         await deveAbrirRitual();
       }
       setVersao((v) => v + 1);
-      setSelecionado((s) => Math.min(s, Math.max(lidos.length - 1, 0)));
+      const pedido = selecionarId.current ? lidos.findIndex((i) => i.id === selecionarId.current) : -1;
+      // Só a carga da lista de destino usa o pedido (uma carga da tela anterior pode chegar antes).
+      if (ehLista(lista)) selecionarId.current = null;
+      setSelecionado((s) => (pedido >= 0 ? pedido : Math.min(s, Math.max(lidos.length - 1, 0))));
       setAgora(new Date());
     } catch (e) {
       setErro(String(e));
     }
   }, [lista]);
+
+  // Primeira abertura: apresenta o app. Quem já usava fica marcado como visto.
+  useEffect(() => {
+    abrirBoasVindas()
+      .then(setBoasVindas)
+      .catch((e) => console.error("Boas-vindas:", e));
+  }, []);
+
+  function fecharBoasVindas() {
+    setBoasVindas(false);
+    marcarBoasVindasVistas().catch((e) => setErro(String(e)));
+    carregar();
+  }
 
   // Registra o atalho global salvo (ou o padrão) ao abrir o app.
   useEffect(() => {
@@ -242,8 +296,19 @@ export default function Principal() {
   carregarAtual.current = carregar;
   useEffect(() => {
     if (!pronto) return;
-    const rodar = () => {
+    const rodar = async () => {
       registrarDiaDeUso().catch(() => {});
+      // Antes das regras: quem voltou de Aguardando já entra no aviso de cobrar o retorno.
+      const voltaram = await devolverAguardando().catch(() => 0);
+      const recorrentes = await gerarRecorrentes().catch((e) => {
+        console.error("Recorrentes:", e);
+        return [] as string[];
+      });
+      if (voltaram > 0 || recorrentes.length > 0) {
+        carregarAtual.current();
+        if (recorrentes.length > 0)
+          mostrarAviso(recorrentes.length === 1 ? `Recorrente na caixa de entrada: ${recorrentes[0]}` : `${recorrentes.length} recorrentes na caixa de entrada.`);
+      }
       verificarRegras()
         .then((marcados) => {
           if (marcados > 0) return carregarAtual.current();
@@ -270,12 +335,23 @@ export default function Principal() {
   useEffect(() => {
     const id = foco ? `${foco.item.id}-${foco.inicio}` : null;
     if (focoAnterior.current === id) return;
+    emit("foco:mudou").catch(() => {});
     if (focoAnterior.current) liberarAvisosDoFoco().catch(() => {});
     focoAnterior.current = id;
     // Começou um foco: guarda as pontuações e avisa se outro item está bem à frente.
     setAlerta((a) => (a && a.focoId === foco?.item.id ? a : null));
     pontosDoInicio.current = null;
-    if (!foco) return;
+    if (!foco) {
+      pararSom();
+      setSomTocando(null);
+      return;
+    }
+    // Som e overlay do foco, se estiverem ligados.
+    const p = prefSomAtual.current;
+    if (p.aoFocar && p.somId && !somAtual()) tocarSomEscolhido(p).catch(() => {});
+    lerOverlayAoFocar()
+      .then((abrir) => (abrir ? abrirMiniJanela() : undefined))
+      .catch((e) => console.warn("Overlay:", e));
     pontuacoesAgora()
       .then((pontos) => {
         pontosDoInicio.current = pontos;
@@ -470,7 +546,7 @@ export default function Principal() {
   useEffect(() => {
     if (!alerta) return;
     function aoTeclar(e: KeyboardEvent) {
-      if (pedidoNota || configAberta || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (pedidoNota || configAberta || boasVindas || editando || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select")) return;
       const resposta = ({ t: "trocar", c: "continuar", a: "adiar" } as const)[e.key.toLowerCase() as "t" | "c" | "a"];
       if (!resposta) return;
@@ -483,10 +559,10 @@ export default function Principal() {
   });
 
   /** Põe o item em foco. Se outro estava em foco, pergunta antes onde parou nele. */
-  function focar(item: Item) {
+  function focar(item: Item, irParaAgora = true) {
     const trocar = async (nota: string | null) => {
       await trocarFoco(item, foco, nota);
-      setLista("agora");
+      if (irParaAgora) setLista("agora");
       await carregar();
     };
     if (foco && foco.item.id !== item.id) {
@@ -504,19 +580,122 @@ export default function Principal() {
       acao: async (nota) => {
         await encerrarFoco(atual, "pausa", nota);
         mostrarAviso(
-          atual.item.dia_planejado === dataLocalIso(new Date()) ? "Pausado. Ele volta para Hoje." : "Pausado. Ele volta para A fazer.",
+          atual.item.dia_planejado === dataLocalIso(new Date()) ? "Timer parado. A tarefa continua em Hoje." : "Timer parado. A tarefa continua em A fazer.",
         );
         await carregar();
       },
     });
   }
 
-  async function concluirFoco() {
+  /** Toca o som escolhido; sem internet para a rádio, avisa. */
+  async function tocarSomEscolhido(p: PreferenciasSom) {
+    const som = acharSom(p.somId);
+    if (!som) return;
+    try {
+      await tocarSom(som, p.volume);
+      setSomTocando(som.id);
+    } catch (e) {
+      setSomTocando(null);
+      mostrarAviso(String(e).replace(/^Error: /, ""));
+      throw e;
+    }
+  }
+
+  function alternarSom() {
+    if (somAtual()) {
+      pararSom();
+      setSomTocando(null);
+    } else if (prefSom.somId) {
+      tocarSomEscolhido(prefSom).catch(() => {});
+    } else {
+      mostrarAviso("Escolha um som no Agora ou em Fazendo agora.");
+    }
+  }
+
+  function mudarPrefSom(p: PreferenciasSom) {
+    const trocou = p.somId !== prefSom.somId;
+    setPrefSom(p);
+    gravarPreferenciasSom(p).catch((e) => setErro(String(e)));
+    definirVolume(p.volume);
+    if (!trocou) return;
+    if (!p.somId) {
+      pararSom();
+      setSomTocando(null);
+    } else if (foco || somAtual()) {
+      tocarSomEscolhido(p).catch(() => {});
+    }
+  }
+
+  useEffect(() => {
+    lerPreferenciasSom()
+      .then(setPrefSom)
+      .catch(() => {});
+  }, []);
+
+  // O overlay (outra janela) pede o estado do som e liga ou desliga por eventos.
+  useEffect(() => {
+    emit("som:estado", { tocando: somTocando, escolhido: prefSom.somId }).catch(() => {});
+  }, [somTocando, prefSom.somId]);
+  const alternarSomAtual = useRef(alternarSom);
+  alternarSomAtual.current = alternarSom;
+  useEffect(() => {
+    const pararA = listen("som:alternar", () => alternarSomAtual.current());
+    const pararB = listen("som:pedir-estado", () =>
+      emit("som:estado", { tocando: somAtual(), escolhido: prefSomAtual.current.somId }).catch(() => {}),
+    );
+    return () => {
+      pararA.then((f) => f());
+      pararB.then((f) => f());
+    };
+  }, []);
+
+  async function concluirFoco(mensagem: string | null = null) {
     if (!foco) return;
-    await encerrarFoco(foco, "concluido");
-    mostrarAviso("Concluído.");
+    const evento = await encerrarFoco(foco, "concluido", mensagem);
+    fecharMiniJanela().catch(() => {});
+    // Desfazer devolve a tarefa aberta (o timer já parou e as horas ficam contadas).
+    if (evento) desfazer.current = [...desfazer.current, { itemId: foco.item.id, anterior: { status: "a_fazer" as const }, eventos: [evento] }].slice(-MAX_DESFAZER);
+    mostrarAviso("Tarefa concluída.", true);
     await carregar();
   }
+
+  /** Apaga a tarefa de vez; Z traz de volta. */
+  async function apagar(item: Item) {
+    try {
+      const alteracao = await apagarItem(item);
+      desfazer.current = [...desfazer.current, alteracao].slice(-MAX_DESFAZER);
+      setEditando((e) => (e?.id === item.id ? null : e));
+      mostrarAviso(`Tarefa apagada: ${item.titulo}`, true);
+      await carregar();
+    } catch (e) {
+      mostrarAviso(String(e).replace(/^Error: /, ""));
+    }
+  }
+
+  /** Concluída ou arquivada volta para a lista em que estava. */
+  function restaurar(item: Item) {
+    const destino = destinoAoRestaurar(item);
+    return aplicar(item, { status: destino }, `Restaurada em ${NOME_LISTA[destino]}`);
+  }
+
+  // Overlay de foco: Finalizar (com a mensagem de encerramento opcional) e Retomar depois de pausar.
+  const concluirFocoAtual = useRef(concluirFoco);
+  concluirFocoAtual.current = concluirFoco;
+  const focarAtual = useRef<(item: Item) => void>(() => {});
+  focarAtual.current = (item) => focar(item, false);
+  useEffect(() => {
+    const pararA = listen<{ mensagem: string | null }>("overlay:concluir", ({ payload }) => {
+      concluirFocoAtual.current(payload.mensagem).catch((e) => setErro(String(e)));
+    });
+    const pararB = listen<{ itemId: string }>("overlay:retomar", async ({ payload }) => {
+      const item = await lerItem(payload.itemId);
+      if (item && item.status !== "feito" && item.status !== "arquivado") focarAtual.current(item);
+    });
+    return () => {
+      pararA.then((f) => f());
+      pararB.then((f) => f());
+    };
+  }, []);
 
   // "Pausar" no menu da bandeja: pausa direto, sem nota, porque a janela pode estar escondida.
   const focoAtual = useRef(foco);
@@ -531,6 +710,95 @@ export default function Principal() {
       parar.then((f) => f());
     };
   }, [carregar]);
+
+  /** Copia uma linha com o status do item, para responder quem cobrou. */
+  async function copiarStatus(item: Item) {
+    try {
+      await writeText(statusParaResponder(item, new Date()));
+      mostrarAviso("Status copiado. Cole na conversa do Teams.");
+    } catch (e) {
+      setErro(String(e));
+    }
+  }
+
+  /** Copia o resumo da daily: o que foi feito, o que é para hoje e o que está travado. */
+  async function copiarDaily() {
+    try {
+      await writeText(resumoDaDaily(await dadosDaDaily(), new Date()));
+      mostrarAviso("Resumo da daily copiado.");
+    } catch (e) {
+      setErro(String(e));
+    }
+  }
+
+  async function abrirMini() {
+    try {
+      await abrirMiniJanela();
+    } catch (e) {
+      mostrarAviso(`Não consegui abrir o overlay de foco: ${e}`);
+    }
+  }
+
+  /** Item escolhido na busca global: abre na lista dele; um concluído ou arquivado volta para A fazer. */
+  async function abrirDaBusca(achado: ItemBusca) {
+    const item = await lerItem(achado.id);
+    if (!item) return;
+    if (item.status === "em_foco") return trocarLista("agora");
+    const fechado = item.status === "feito" || item.status === "arquivado";
+    const reaberto = destinoAoRestaurar(item);
+    if (fechado) {
+      // Sem `aplicar`: a recarga dela seria a da tela atual e chegaria depois da lista nova.
+      const alteracao = await alterarItem(item, { status: reaberto });
+      desfazer.current = [...desfazer.current, alteracao].slice(-MAX_DESFAZER);
+      mostrarAviso(`Reaberta em ${NOME_LISTA[reaberto]}`, true);
+    }
+    const destino: Lista = fechado ? reaberto : item.status === "inbox" ? "inbox" : item.status === "aguardando" ? "aguardando" : "a_fazer";
+    selecionarId.current = item.id;
+    if (lista === destino) await carregar();
+    else setLista(destino);
+  }
+
+  const comandos: Comando[] = [
+    ...TELAS.map((t) => ({ nome: `Ir para ${NOME_TELA[t]}`, acao: () => trocarLista(t) })),
+    { nome: "Nova tarefa", tecla: "C", acao: () => invoke("abrir_captura") },
+    { nome: "Copiar o resumo da daily", acao: () => copiarDaily() },
+    { nome: "Abrir o overlay de foco", acao: () => abrirMini() },
+    { nome: somTocando ? "Parar o som do foco" : "Tocar o som do foco", acao: () => alternarSom() },
+    ...(foco ? [{ nome: `Pausar ${foco.item.titulo}`, tecla: "P", acao: () => pausar() }] : []),
+    { nome: "Anotar o que irrita", tecla: "!", acao: () => setAnotando(true) },
+    { nome: "Configurações", tecla: ",", acao: () => setConfigAberta(true) },
+    { nome: "Rever as boas-vindas", acao: () => setBoasVindas(true) },
+  ];
+
+  // Ctrl+K abre a busca de qualquer tela (menos com outra janela de diálogo aberta).
+  // Ctrl+C numa lista copia o status do item selecionado; em Meu dia, o resumo da daily.
+  useEffect(() => {
+    function aoTeclar(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      if (configAberta || pedidoNota || anotando || buscando || boasVindas || editando) return;
+      const tecla = e.key.toLowerCase();
+      if (tecla === "k") {
+        e.preventDefault();
+        setBuscando(true);
+        return;
+      }
+      if (tecla !== "c" || edicao || menu || window.getSelection()?.toString()) return;
+      if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select")) return;
+      const item = itens?.[selecionado];
+      if (ehLista(lista) && item) {
+        e.preventDefault();
+        copiarStatus(item);
+      } else if (lista === "dia") {
+        e.preventDefault();
+        copiarDaily();
+      } else if (lista === "agora" && foco) {
+        e.preventDefault();
+        copiarStatus(foco.item);
+      }
+    }
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  });
 
   async function iniciarEdicao(campo: CampoEditavel, item: Item) {
     if (campo === "pessoa" || campo === "projeto") setSugestoes(await listarSugestoes());
@@ -554,7 +822,7 @@ export default function Principal() {
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
       // # e @ podem vir com AltGr (Ctrl+Alt no Windows) em alguns teclados.
-      if (edicao || configAberta || pedidoNota || menu || anotando || ((e.ctrlKey || e.metaKey || e.altKey) && e.key !== "#" && e.key !== "@")) return;
+      if (edicao || configAberta || pedidoNota || menu || anotando || buscando || boasVindas || editando || ((e.ctrlKey || e.metaKey || e.altKey) && e.key !== "#" && e.key !== "@")) return;
       // Digitando num campo (busca, código do projeto): as letras são texto, não atalhos.
       if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select")) return;
       const item = itens?.[selecionado];
@@ -572,6 +840,7 @@ export default function Principal() {
         z: () => desfazerUltima(),
         i: () => atualizacao && instalar(),
         "!": () => setAnotando(true),
+        "/": () => setBuscando(true),
         s: () =>
           lerConfigDevops().then((cfg) =>
             cfg.organizacao ? sincronizarAzureAgora(true).catch(() => {}) : mostrarAviso("Configure o Azure DevOps em Configurações (,)."),
@@ -592,14 +861,20 @@ export default function Principal() {
       } else if (item) {
         Object.assign(acoes, {
           f: () => focar(item),
-          Enter: () => lista === "inbox" && aplicar(item, { status: "a_fazer" }, "Movido para A fazer"),
-          e: () => aplicar(item, { status: "arquivado" }, "Arquivado"),
+          a: () => setEditando(item),
+          Delete: () => apagar(item),
+          Enter: () =>
+            lista === "inbox"
+              ? aplicar(item, { status: "a_fazer" }, "Movido para A fazer")
+              : lista === "aguardando" && aplicar(item, { status: "a_fazer" }, "Voltou para A fazer"),
+          w: () => setMenu("aguardando"),
+          e: () => aplicar(item, { status: "arquivado" }, "Arquivada. Fica em Fechadas."),
           x: () => aplicar(item, { status: "feito" }, "Concluído"),
           p: () => iniciarEdicao("prazo", item),
           "#": () => iniciarEdicao("projeto", item),
           "@": () => iniciarEdicao("pessoa", item),
           r: () => iniciarEdicao("titulo", item),
-          d: () => iniciarEdicao("nota", item),
+          d: () => setEditando(item),
           b: () => cobrar(item),
           m: () => setMenu("prometido"),
           o: () => item.link && openUrl(item.link),
@@ -617,7 +892,7 @@ export default function Principal() {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [edicao, configAberta, pedidoNota, menu, anotando, itens, selecionado, lista, aplicar, foco, proximas, prioridades, atualizacao]);
+  }, [edicao, configAberta, pedidoNota, menu, anotando, buscando, boasVindas, editando, itens, selecionado, lista, aplicar, foco, proximas, prioridades, atualizacao]);
 
   // Mantém o item selecionado visível ao navegar pelo teclado.
   useEffect(() => {
@@ -635,16 +910,24 @@ export default function Principal() {
       ? "Poucos avisos e certeiros. Ligue, desligue e ajuste cada regra."
       : lista === "uso"
       ? "As 4 semanas de uso real: como está indo e o que irrita."
+      : lista === "agenda"
+      ? "Compromissos e tarefas por dia. Arraste uma tarefa da faixa sem horário para a grade para marcar a hora."
+      : lista === "fechadas"
+      ? "Tarefas concluídas e arquivadas. Restaurar devolve cada uma para a lista em que estava."
       : lista === "dia"
-      ? "O que chegou, as 3 de hoje, o que você está fazendo e o que já foi feito. Arraste os cartões entre as colunas."
+      ? "O que chegou, o que é para hoje, o que você está fazendo e o que já foi feito. Clique num cartão para abrir, arraste para mudar de coluna."
       : lista === "pessoas"
       ? "Tudo que cada pessoa pediu, para responder quem está cobrando."
       : lista === "agora"
       ? foco
-        ? "Uma coisa por vez. Interrupções viram captura."
+        ? "Uma coisa por vez. Interrupções viram tarefa nova."
         : "Escolha o que fazer agora."
       : itens === null
       ? ""
+      : lista === "aguardando"
+        ? total === 0
+          ? "Nada esperando ninguém."
+          : `${total === 1 ? "Um item espera" : `${total} itens esperam`} a resposta de alguém. No dia de cobrar, voltam para A fazer.`
       : lista === "inbox"
         ? total === 0
           ? "Nada esperando triagem."
@@ -669,13 +952,34 @@ export default function Principal() {
       concluir: () => aplicar(item, { status: "feito" }, "Concluído"),
       focar: () => focar(item),
       mover: (destino: Lista) =>
-        aplicar(item, { status: destino }, destino === "inbox" ? "Voltou para a caixa de entrada" : "Movido para A fazer"),
-      arquivar: () => aplicar(item, { status: "arquivado" }, "Arquivado"),
+        aplicar(
+          item,
+          { status: destino },
+          destino === "inbox" ? "Voltou para a caixa de entrada" : item.status === "aguardando" ? "Voltou para A fazer" : "Movido para A fazer",
+        ),
+      aguardar: (quem: string | null, ate: string | null) => {
+        setMenu(null);
+        aplicar(
+          item,
+          // Planejado para hoje e esperando alguém não combina: sai de Hoje.
+          { status: "aguardando", aguardando_quem: quem, aguardando_ate: ate, dia_planejado: null, quando: null },
+          quem ? `Aguardando ${quem}` : "Aguardando",
+        );
+      },
+      copiarStatus: () => copiarStatus(item),
+      abrir: () => {
+        selecionar();
+        setEditando(item);
+      },
+      apagar: () => apagar(item),
+      arquivar: () => aplicar(item, { status: "arquivado" }, "Arquivada. Fica em Fechadas."),
       abrirLink: () => item.link && openUrl(item.link),
       editar: (campo: CampoEditavel) => {
         selecionar();
         setMenu(null);
-        iniciarEdicao(campo, item);
+        // A descrição tem formatação: edita no editor da tarefa.
+        if (campo === "nota") setEditando(item);
+        else iniciarEdicao(campo, item);
       },
       definirPrazo: (prazo: string | null) => {
         setMenu(null);
@@ -714,23 +1018,33 @@ export default function Principal() {
         const item = itens?.find((i) => i.id === id) ?? (arrastado.current?.id === id ? arrastado.current : null);
         if (!item) return;
         if (destino === "agora") focar(item);
-        else if (ehLista(destino) && destino !== lista)
-          aplicar(item, { status: destino }, destino === "inbox" ? "Voltou para a caixa de entrada" : "Movido para A fazer");
+        else if (ehLista(destino) && destino !== lista && item.status !== destino)
+          aplicar(
+            item,
+            destino === "aguardando" ? { status: destino, dia_planejado: null, quando: null } : { status: destino },
+            destino === "inbox"
+              ? "Voltou para a caixa de entrada"
+              : destino === "aguardando"
+                ? "Aguardando. Aperte W para dizer quem e quando cobrar."
+                : "Movido para A fazer",
+          );
       },
     };
   }
+
+  const propsSom = { preferencias: prefSom, tocando: somTocando, aoMudar: mudarPrefSom, aoAlternar: alternarSom };
 
   const botaoCapturar = (
     <button
       type="button"
       onClick={() => invoke("abrir_captura")}
       title={`Abre a mesma janela do atalho global (${rotuloAtalho(atalho)})`}
-      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-suave hover:bg-folha hover:text-tinta"
+      className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm text-suave hover:bg-folha hover:text-tinta"
     >
       <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true" className="shrink-0">
         <path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       </svg>
-      <span className="flex-1 whitespace-nowrap">Nova captura</span>
+      <span className="flex-1 whitespace-nowrap">Nova tarefa</span>
       <kbd className="truncate font-sans text-xs text-apagado">{rotuloAtalho(atalho)}</kbd>
     </button>
   );
@@ -742,7 +1056,7 @@ export default function Principal() {
       type="button"
       onClick={() => trocarLista(l)}
       {...alvoDeArrasto(l)}
-      className={`flex items-center justify-between rounded-lg px-3 py-2 text-[15px] ${
+      className={`flex shrink-0 items-center justify-between rounded-lg px-3 py-1.5 text-[15px] ${
         alvoArrasto === l
           ? "bg-destaque-claro text-destaque-tinta ring-2 ring-destaque"
           : lista === l
@@ -762,25 +1076,38 @@ export default function Principal() {
   );
 
   return (
-    <div className="flex h-screen bg-folha text-tinta select-none">
-      <nav aria-label="Listas" className="hidden w-56 shrink-0 flex-col gap-1 bg-lateral px-4 py-7 md:flex">
-        <div className="px-3 pb-6 font-titulo text-[22px] font-semibold tracking-tight">Juggl</div>
-        {GRUPOS_MENU.map((grupo) => (
-          <div key={grupo.titulo} className="mb-4 flex flex-col gap-0.5">
-            <h3 className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-apagado">{grupo.titulo}</h3>
-            {grupo.telas.map(botaoTela)}
-          </div>
+    <div className="flex h-screen overflow-hidden bg-folha text-tinta select-none">
+      {/* A barra lateral rola sozinha em janelas baixas, sem fazer a página inteira rolar junto. */}
+      <nav aria-label="Listas" className="hidden w-56 shrink-0 flex-col gap-1 overflow-y-auto bg-lateral px-4 py-6 md:flex">
+        <div className="px-3 pb-4 font-titulo text-[22px] font-semibold tracking-tight">Juggl</div>
+        {GRUPOS_MENU.map((grupo, g) => (
+          <Fragment key={grupo.titulo}>
+            <div className="mb-3 flex shrink-0 flex-col gap-0.5">
+              <h3 className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-apagado">{grupo.titulo}</h3>
+              {grupo.telas.map(botaoTela)}
+              {g === 0 && (
+                <CartaoFoco
+                  foco={foco}
+                  ativo={lista === "agora"}
+                  alvo={alvoArrasto === "agora"}
+                  arrasto={alvoDeArrasto("agora")}
+                  aoAbrir={() => trocarLista("agora")}
+                  aoPausar={pausar}
+                  aoAbrirMini={abrirMini}
+                />
+              )}
+            </div>
+          </Fragment>
         ))}
-        {foco && lista !== "agora" && (
-          <button
-            type="button"
-            onClick={() => trocarLista("agora")}
-            className="mx-3 mt-1 truncate text-left text-[13px] text-suave hover:text-tinta"
-            title={foco.item.titulo}
-          >
-            Em foco: {foco.item.titulo}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setBuscando(true)}
+          className="mb-2 flex w-full shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm text-suave hover:bg-folha hover:text-tinta"
+        >
+          <Icone nome="busca" className="shrink-0" />
+          <span className="flex-1">Buscar</span>
+          <kbd className="font-sans text-xs text-apagado">Ctrl+K</kbd>
+        </button>
         <div className="flex-1" />
         {botaoTela("regras")}
         {botaoTela("uso")}
@@ -789,7 +1116,7 @@ export default function Principal() {
           type="button"
           onClick={() => setAnotando(true)}
           title="Anotar algo que atrapalhou, para corrigir depois"
-          className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-suave hover:bg-folha hover:text-tinta"
+          className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm text-suave hover:bg-folha hover:text-tinta"
         >
           Anotar o que irrita <kbd className="font-sans text-xs text-apagado">!</kbd>
         </button>
@@ -797,22 +1124,22 @@ export default function Principal() {
         <button
           type="button"
           onClick={() => setConfigAberta(true)}
-          className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-suave hover:bg-folha hover:text-tinta"
+          className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm text-suave hover:bg-folha hover:text-tinta"
         >
           Configurações <kbd className="font-sans text-xs text-apagado">,</kbd>
         </button>
       </nav>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/* Janela estreita: as listas viram abas no topo. */}
-        <nav aria-label="Listas" className="flex items-center gap-1 border-b border-linha px-4 py-2 md:hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {/* Janela estreita: as listas viram abas no topo, que rolam na horizontal se não couberem. */}
+        <nav aria-label="Listas" className="flex shrink-0 items-center gap-1 overflow-x-auto whitespace-nowrap border-b border-linha px-4 py-2 md:hidden">
           {TELAS.map((l) => (
             <button
               key={l}
               type="button"
               onClick={() => trocarLista(l)}
               {...alvoDeArrasto(l)}
-              className={`rounded-full px-3 py-1 text-sm ${
+              className={`shrink-0 rounded-full px-3 py-1 text-sm ${
                 alvoArrasto === l ? "bg-destaque-claro text-destaque-tinta" : lista === l ? "bg-etiqueta font-semibold" : "text-suave"
               }`}
             >
@@ -823,7 +1150,7 @@ export default function Principal() {
           <button
             type="button"
             onClick={() => setConfigAberta(true)}
-            className="ml-auto px-2 text-sm text-suave hover:text-tinta"
+            className="ml-auto shrink-0 px-2 text-sm text-suave hover:text-tinta"
           >
             Configurações
           </button>
@@ -835,7 +1162,7 @@ export default function Principal() {
 
           {avisoAtalho && (
             <p className="mb-5 rounded-xl bg-atraso-claro px-4 py-3 text-sm text-atraso">
-              O atalho global não funcionou: {avisoAtalho}. Use Nova captura enquanto isso.
+              O atalho global não funcionou: {avisoAtalho}. Use Nova tarefa enquanto isso.
             </p>
           )}
           {erro && <p className="mb-5 rounded-xl bg-atraso-claro px-4 py-3 text-sm text-atraso">Erro no banco: {erro}</p>}
@@ -905,7 +1232,12 @@ export default function Principal() {
 
           {itens?.length === 0 && lista === "inbox" && (
             <p className="mt-16 text-center text-[15px] text-apagado">
-              Aperte {rotuloAtalho(atalho)} em qualquer janela para capturar um pedido.
+              Aperte {rotuloAtalho(atalho)} em qualquer janela para anotar uma tarefa nova.
+            </p>
+          )}
+          {itens?.length === 0 && lista === "aguardando" && (
+            <p className="mt-16 text-center text-[15px] text-apagado">
+              Pediu algo a alguém e está esperando? Aperte W num item de A fazer: ele sai da frente e volta no dia de cobrar.
             </p>
           )}
 
@@ -924,6 +1256,10 @@ export default function Principal() {
               }}
               aoAvisar={mostrarAviso}
               aoArrastar={(item) => (arrastado.current = item)}
+              aoCopiarDaily={copiarDaily}
+              aoAbrir={setEditando}
+              som={propsSom}
+              atalhoCaptura={rotuloAtalho(atalho)}
             />
           )}
 
@@ -937,6 +1273,21 @@ export default function Principal() {
               aoAlterar={carregar}
               aoAvisar={mostrarAviso}
             />
+          )}
+
+          {lista === "agenda" && (
+            <Agenda
+              versao={versao}
+              teclado={!editando && !configAberta && !pedidoNota && !anotando && !buscando && !boasVindas}
+              aoAbrirTarefa={setEditando}
+              aoAplicar={aplicar}
+              aoAvisar={mostrarAviso}
+              aoAlterar={carregar}
+            />
+          )}
+
+          {lista === "fechadas" && (
+            <Fechadas versao={versao} aoRestaurar={restaurar} aoAbrir={setEditando} aoApagar={apagar} />
           )}
 
           {lista === "regras" && <Regras aoAvisar={mostrarAviso} />}
@@ -955,7 +1306,9 @@ export default function Principal() {
               aoConcluir={concluirFoco}
               aoCobrar={() => foco && cobrar(foco.item)}
               aoPlanejar={() => trocarLista("dia")}
-              aoMudarNota={(nota) => foco && aplicar(foco.item, { nota }, nota ? "Descrição salva" : "Descrição removida")}
+              aoEditar={() => foco && setEditando(foco.item)}
+              som={propsSom}
+              aoAbrirMini={abrirMini}
             />
           )}
 
@@ -999,27 +1352,6 @@ export default function Principal() {
                     <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-apagado">
                       {ROTULO_CAMPO[edicao.campo]}
                     </label>
-                    {edicao.campo === "nota" ? (
-                      <textarea
-                        autoFocus
-                        rows={Math.min(Math.max(edicao.valor.split("\n").length, 3), 10)}
-                        value={edicao.valor}
-                        onChange={(e) => setEdicao({ ...edicao, valor: e.target.value, erro: null })}
-                        onKeyDown={(e) => {
-                          if (e.key === "Escape") {
-                            e.preventDefault();
-                            setEdicao(null);
-                          } else if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            confirmarEdicao(item);
-                          }
-                        }}
-                        // Clicar fora guarda o texto: descrição é longa demais para perder.
-                        onBlur={() => confirmarEdicao(item)}
-                        placeholder="Detalhes, a mensagem recebida, links..."
-                        className="w-full resize-y rounded-lg border border-linha bg-folha px-3 py-1.5 text-sm leading-5 outline-none focus:border-destaque"
-                      />
-                    ) : (
                     <input
                       autoFocus
                       onFocus={(e) => e.target.select()}
@@ -1035,7 +1367,6 @@ export default function Principal() {
                       onBlur={() => setEdicao(null)}
                       className="w-full rounded-lg border border-linha bg-folha px-3 py-1.5 text-[15px] outline-none focus:border-destaque"
                     />
-                    )}
                     <datalist id="sugestoes-edicao">
                       {sugestoesEdicao.map((s) => (
                         <option key={s} value={s} />
@@ -1051,7 +1382,7 @@ export default function Principal() {
           </ul>
         </main>
 
-        <footer className="flex flex-wrap items-center gap-x-5 gap-y-1 px-6 py-4 text-[13px] text-apagado md:px-14">
+        <footer className={`${aviso ? "flex" : "hidden md:flex"} shrink-0 flex-wrap items-center gap-x-5 gap-y-1 px-6 py-4 text-[13px] text-apagado md:px-14`}>
           {aviso ? (
             <span className="flex items-center gap-3 font-semibold text-tinta">
               {aviso.texto}
@@ -1069,6 +1400,7 @@ export default function Principal() {
             lista === "horas" ? (
               <>
                 <Dica teclas="← →">trocar semana</Dica>
+                <Dica teclas="N">lançar tempo</Dica>
                 <Dica teclas="Ctrl+C">copiar</Dica>
                 <Dica teclas="Ctrl+S">exportar CSV</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
@@ -1094,10 +1426,26 @@ export default function Principal() {
                 <Dica teclas="Ctrl+C">copiar a lista</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
               </>
+            ) : lista === "agenda" ? (
+              <>
+                <Dica teclas="← →">trocar período</Dica>
+                <Dica teclas="T">hoje</Dica>
+                <span>Clique num horário para criar, arraste tarefas para marcar a hora</span>
+                <Dica teclas="Tab">trocar tela</Dica>
+              </>
+            ) : lista === "fechadas" ? (
+              <>
+                <span>Clique numa tarefa para abrir</span>
+                <Dica teclas="Z">desfazer</Dica>
+                <Dica teclas="Ctrl+K">buscar</Dica>
+                <Dica teclas="Tab">trocar tela</Dica>
+              </>
             ) : lista === "dia" ? (
               <>
-                <span>Arraste os cartões entre as colunas</span>
-                <Dica teclas="C">nova captura</Dica>
+                <span>Clique num cartão para abrir, arraste entre as colunas</span>
+                <Dica teclas="Ctrl+C">resumo da daily</Dica>
+                <Dica teclas="Ctrl+K">buscar</Dica>
+                <Dica teclas="C">nova tarefa</Dica>
                 <Dica teclas="Z">desfazer</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
               </>
@@ -1117,25 +1465,31 @@ export default function Principal() {
                 <Dica teclas="X">concluir</Dica>
                 <Dica teclas="1 2 3">focar uma das próximas</Dica>
                 <Dica teclas="B">cobrou de novo</Dica>
-                <Dica teclas="D">descrição</Dica>
+                <Dica teclas="D">editar</Dica>
                 <Dica teclas="O">abrir link</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
               </>
             ) : (
               <>
                 {lista === "inbox" && <Dica teclas="Enter">mover para A fazer</Dica>}
+                {lista === "aguardando" && <Dica teclas="Enter">voltar para A fazer</Dica>}
+                <Dica teclas="W">{lista === "aguardando" ? "quem e quando" : "aguardando"}</Dica>
                 {lista === "inbox" && devopsAtivo && <Dica teclas="S">Azure DevOps</Dica>}
+                <Dica teclas="A">abrir</Dica>
                 <Dica teclas="F">focar</Dica>
                 <Dica teclas="P">prazo</Dica>
                 <Dica teclas={prioridades.length > 1 ? `1–${Math.min(prioridades.length, 9)}` : "1"}>prioridade</Dica>
                 <Dica teclas="#">projeto</Dica>
                 <Dica teclas="@">quem pediu</Dica>
-                <Dica teclas="D">descrição</Dica>
+                <Dica teclas="D">editar</Dica>
                 <Dica teclas="M">prometi para</Dica>
                 <Dica teclas="B">cobrou de novo</Dica>
                 <Dica teclas="X">concluir</Dica>
                 <Dica teclas="E">arquivar</Dica>
+                <Dica teclas="Delete">apagar</Dica>
+                <Dica teclas="Ctrl+C">copiar status</Dica>
                 <Dica teclas="Z">desfazer</Dica>
+                <Dica teclas="Ctrl+K">buscar</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
               </>
             )
@@ -1156,6 +1510,18 @@ export default function Principal() {
               })
               .catch((e) => setErro(String(e)));
           }}
+        />
+      )}
+      {buscando && (
+        <Busca
+          comandos={comandos}
+          aoFechar={() => setBuscando(false)}
+          aoAbrir={(item) => abrirDaBusca(item).catch((e) => setErro(String(e)))}
+          aoCopiarStatus={(achado) =>
+            lerItem(achado.id)
+              .then((item) => item && copiarStatus(item))
+              .catch((e) => setErro(String(e)))
+          }
         />
       )}
       {pedidoNota && (
@@ -1181,10 +1547,46 @@ export default function Principal() {
             setAtualizacao(nova);
             return `Versão ${nova.version} disponível: use o aviso no topo da tela.`;
           }}
+          aoReverBoasVindas={() => {
+            setConfigAberta(false);
+            setBoasVindas(true);
+          }}
           aoFechar={() => {
             setConfigAberta(false);
             carregar();
           }}
+        />
+      )}
+      {editando && (
+        <EditorTarefa
+          key={editando.id}
+          item={editando}
+          prioridades={prioridades}
+          aoSalvar={(mudancas) => aplicar(editando, mudancas, "Tarefa salva")}
+          aoFocar={() => {
+            setEditando(null);
+            focar(editando);
+          }}
+          aoConcluir={() => {
+            setEditando(null);
+            if (editando.status === "em_foco") concluirFoco().catch((e) => setErro(String(e)));
+            else aplicar(editando, { status: "feito" }, "Tarefa concluída");
+          }}
+          aoArquivar={() => {
+            setEditando(null);
+            aplicar(editando, { status: "arquivado" }, "Arquivada. Fica em Fechadas.");
+          }}
+          aoApagar={() => apagar(editando)}
+          aoFechar={() => setEditando(null)}
+          aoMudarPartes={carregar}
+        />
+      )}
+      {boasVindas && (
+        <BoasVindas
+          atalho={atalho}
+          aoMudarAtalho={setAtalho}
+          aoSincronizarDevops={() => sincronizarAzureAgora(true)}
+          aoFechar={fecharBoasVindas}
         />
       )}
     </div>
@@ -1196,5 +1598,80 @@ function Dica({ teclas, children }: { teclas: string; children: React.ReactNode 
     <span>
       <b className="font-semibold text-tinta-2">{teclas}</b> {children}
     </span>
+  );
+}
+
+interface PropsCartaoFoco {
+  foco: Foco | null;
+  ativo: boolean;
+  /** Um item está sendo arrastado por cima: soltar põe em foco. */
+  alvo: boolean;
+  arrasto: React.HTMLAttributes<HTMLElement>;
+  aoAbrir: () => void;
+  aoPausar: () => void;
+  aoAbrirMini: () => void;
+}
+
+/**
+ * O foco na barra lateral, sempre à vista: título, timer e Pausar. Clicar abre a tela
+ * Agora; soltar um item aqui põe ele em foco.
+ */
+function CartaoFoco({ foco, ativo, alvo, arrasto, aoAbrir, aoPausar, aoAbrirMini }: PropsCartaoFoco) {
+  const [agora, setAgora] = useState(() => Date.now());
+  useEffect(() => {
+    if (!foco) return;
+    setAgora(Date.now());
+    const relogio = setInterval(() => setAgora(Date.now()), 1000);
+    return () => clearInterval(relogio);
+  }, [foco]);
+
+  const borda = alvo
+    ? "bg-destaque-claro ring-2 ring-destaque"
+    : ativo
+      ? "bg-folha shadow-sm ring-1 ring-destaque"
+      : foco
+        ? "bg-folha/70 hover:bg-folha"
+        : "hover:bg-folha/60";
+  if (!foco) {
+    return (
+      <button
+        type="button"
+        {...arrasto}
+        onClick={aoAbrir}
+        title="Tela Agora. Solte um item aqui para focar."
+        className={`mt-1 flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-left text-[13px] text-apagado ${borda}`}
+      >
+        <span className="size-2 shrink-0 rounded-full border-[1.5px] border-apagado" />
+        Nada em foco
+      </button>
+    );
+  }
+  return (
+    <div {...arrasto} className={`mt-1 flex shrink-0 flex-col gap-1 rounded-xl px-3 py-2.5 ${borda}`}>
+      <button type="button" onClick={aoAbrir} title={`${foco.item.titulo}: abrir a tela Agora`} className="text-left">
+        <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-destaque">
+          <span className="size-1.5 rounded-full bg-destaque" />
+          Em foco
+        </span>
+        <span className="mt-0.5 line-clamp-2 text-[13px] leading-snug font-medium text-tinta">{foco.item.titulo}</span>
+      </button>
+      <div className="flex items-center gap-1">
+        <span className="flex-1 font-titulo text-lg font-medium tabular-nums tracking-tight">
+          {formatarCronometro(agora - new Date(foco.inicio).getTime())}
+        </span>
+        <button type="button" title="Parar o timer (P na tela Agora)" aria-label="Parar o timer" onClick={aoPausar} className="rounded-md p-1 text-suave hover:bg-etiqueta hover:text-tinta">
+          <Icone nome="pausa" />
+        </button>
+        <button
+          type="button"
+          title="Overlay discreto no canto da tela"
+          aria-label="Abrir o overlay de foco"
+          onClick={aoAbrirMini}
+          className="rounded-md p-1 text-suave hover:bg-etiqueta hover:text-tinta"
+        >
+          <Icone nome="janela" />
+        </button>
+      </div>
+    </div>
   );
 }

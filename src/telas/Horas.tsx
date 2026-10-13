@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { dataLocalIso } from "../captura/datas";
+import { gravarConfig, lerConfig } from "../db/config";
 import { definirCodigoApontamento, listarSessoes } from "../db/horas";
 import { registrarApontamento } from "../db/uso";
 import {
@@ -10,9 +11,14 @@ import {
   inicioDaSemana,
   NOMES_DIA_CURTO,
   resumirSemana,
+  tabelaLinhas,
   tabelaSemana,
+  type FormatoApontamento,
   type ResumoSemana,
+  type Sessao,
 } from "../horas/calculo";
+import LancarTempo from "./horas/LancarTempo";
+import SessoesDoDia, { type Celula } from "./horas/SessoesDoDia";
 
 const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 
@@ -37,6 +43,11 @@ function rotuloSemana(segunda: Date): string {
 export default function Horas({ versao, aoAvisar }: Props) {
   const [segunda, setSegunda] = useState(() => inicioDaSemana(new Date()));
   const [resumo, setResumo] = useState<ResumoSemana | null>(null);
+  const [sessoes, setSessoes] = useState<Sessao[]>([]);
+  const [celula, setCelula] = useState<Celula | null>(null);
+  const [lancando, setLancando] = useState(false);
+  const [formato, setFormato] = useState<FormatoApontamento>("semana");
+  const [passo, setPasso] = useState(0);
   const [abertos, setAbertos] = useState<Set<string>>(new Set());
   const [erro, setErro] = useState<string | null>(null);
   const [editandoCodigo, setEditandoCodigo] = useState<string | null>(null);
@@ -45,8 +56,9 @@ export default function Horas({ versao, aoAvisar }: Props) {
 
   const carregar = useCallback(async () => {
     try {
-      const sessoes = await listarSessoes(segunda, somarDias(segunda, 7));
-      setResumo(resumirSemana(sessoes, segunda));
+      const lidas = await listarSessoes(segunda, somarDias(segunda, 7));
+      setSessoes(lidas);
+      setResumo(resumirSemana(lidas, segunda));
       setErro(null);
     } catch (e) {
       setErro(String(e));
@@ -60,12 +72,31 @@ export default function Horas({ versao, aoAvisar }: Props) {
     return () => clearInterval(relogio);
   }, [carregar, versao]);
 
+  // Formato do apontamento e arredondamento, escolhidos uma vez e guardados.
+  useEffect(() => {
+    lerConfig("horas_formato").then((f) => f === "linhas" && setFormato("linhas"));
+    lerConfig("horas_arredondar").then((p) => setPasso(Number(p) || 0));
+  }, []);
+
+  function trocarFormato(novo: FormatoApontamento) {
+    setFormato(novo);
+    gravarConfig("horas_formato", novo).catch(() => {});
+  }
+
+  function trocarPasso(novo: number) {
+    setPasso(novo);
+    gravarConfig("horas_arredondar", String(novo)).catch(() => {});
+  }
+
+  const gerar = (r: ResumoSemana, separador: ";" | "\t") =>
+    formato === "linhas" ? tabelaLinhas(r, separador, passo) : tabelaSemana(r, separador, passo);
+
   const estaSemana = segunda.getTime() === inicioDaSemana(new Date()).getTime();
   const hoje = dataLocalIso(new Date());
 
   async function copiar() {
     if (!resumo || resumo.total === 0) return;
-    await writeText(tabelaSemana(resumo, "\t"));
+    await writeText(gerar(resumo, "\t"));
     medirApontamento();
     aoAvisar("Tabela copiada. Cole numa planilha ou no sistema de apontamento.");
   }
@@ -76,7 +107,7 @@ export default function Horas({ versao, aoAvisar }: Props) {
       // BOM para o Excel reconhecer os acentos.
       const caminho = await invoke<string>("salvar_csv", {
         nome: `juggl-horas-${dataLocalIso(segunda)}.csv`,
-        conteudo: `﻿${tabelaSemana(resumo, ";")}`,
+        conteudo: `﻿${gerar(resumo, ";")}`,
       });
       aoAvisar(`CSV salvo em ${caminho}`);
       medirApontamento();
@@ -96,12 +127,15 @@ export default function Horas({ versao, aoAvisar }: Props) {
     await carregar();
   }
 
-  // Teclado: ← → trocam a semana, Ctrl+C copia, Ctrl+S exporta o CSV.
+  // Teclado: ← → trocam a semana, N lança tempo, Ctrl+C copia, Ctrl+S exporta o CSV.
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
-      if (e.target instanceof HTMLElement && e.target.closest("input, textarea")) return;
+      if (lancando) return;
+      if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select")) return;
       const ctrl = e.ctrlKey || e.metaKey;
-      if (!ctrl && e.key === "ArrowLeft") setSegunda((s) => somarDias(s, -7));
+      if (!ctrl && e.key === "Escape" && celula) setCelula(null);
+      else if (!ctrl && !e.altKey && e.key.toLowerCase() === "n") setLancando(true);
+      else if (!ctrl && e.key === "ArrowLeft") setSegunda((s) => somarDias(s, -7));
       else if (!ctrl && e.key === "ArrowRight") setSegunda((s) => somarDias(s, 7));
       else if (ctrl && e.key.toLowerCase() === "c" && !window.getSelection()?.toString()) copiar();
       else if (ctrl && e.key.toLowerCase() === "s") exportar();
@@ -119,7 +153,34 @@ export default function Horas({ versao, aoAvisar }: Props) {
     setAbertos(novos);
   }
 
+  // Trocar de semana fecha o painel de sessões, que é de um dia daquela semana.
+  useEffect(() => setCelula(null), [segunda]);
+
   const botao = "rounded-lg border border-linha px-3 py-1.5 text-sm hover:bg-etiqueta disabled:opacity-40";
+
+  /** Célula de um dia: clique abre as sessões daquele dia para ajustar. */
+  const celulaDia = (ms: number, alvo: Celula, classe: string) => {
+    const aberta = celula && celula.dia === alvo.dia && celula.projetoId === alvo.projetoId && celula.itemChave === alvo.itemChave;
+    return (
+      <td key={alvo.dia} className={`px-0.5 py-1 text-right ${classe}`}>
+        {ms > 0 ? (
+          <button
+            type="button"
+            title="Ver e ajustar as sessões deste dia"
+            onClick={(e) => {
+              e.stopPropagation();
+              setCelula(aberta ? null : alvo);
+            }}
+            className={`w-full rounded px-1 py-1.5 text-right hover:bg-destaque-claro hover:text-destaque-tinta ${
+              aberta ? "bg-destaque-claro text-destaque-tinta ring-1 ring-destaque" : ""
+            }`}
+          >
+            {horasMinutos(ms)}
+          </button>
+        ) : null}
+      </td>
+    );
+  };
   const vazio = !resumo || resumo.total === 0;
 
   return (
@@ -138,6 +199,9 @@ export default function Horas({ versao, aoAvisar }: Props) {
           </button>
         )}
         <div className="flex-1" />
+        <button type="button" onClick={() => setLancando(true)} title="Reunião, foco esquecido... (N)" className={botao}>
+          + Lançar tempo
+        </button>
         <button type="button" disabled={vazio} onClick={copiar} title="Copiar a tabela (Ctrl+C)" className={botao}>
           Copiar
         </button>
@@ -154,9 +218,22 @@ export default function Horas({ versao, aoAvisar }: Props) {
 
       {erro && <p className="mt-4 rounded-xl bg-atraso-claro px-4 py-3 text-sm text-atraso">{erro}</p>}
 
+      {lancando && (
+        <LancarTempo
+          segunda={segunda}
+          aoCancelar={() => setLancando(false)}
+          aoLancar={async (texto) => {
+            setLancando(false);
+            await carregar();
+            aoAvisar(texto);
+          }}
+        />
+      )}
+
       {resumo && vazio ? (
         <p className="mt-16 text-center text-[15px] text-apagado">
-          Nenhum tempo em foco nesta semana. O tempo conta enquanto um item está em foco (tecla F ou o botão de focar).
+          Nenhum tempo nesta semana. O tempo conta enquanto um item está em foco (tecla F ou o botão de focar); reuniões e
+          o que ficou de fora entram por "+ Lançar tempo" (N).
         </p>
       ) : (
         resumo && (
@@ -219,22 +296,14 @@ export default function Horas({ versao, aoAvisar }: Props) {
                             )}
                           </div>
                         </td>
-                        {l.porDia.map((ms, i) => (
-                          <td key={i} className="px-1 py-2.5 text-right text-tinta-2">
-                            {horasMinutos(ms)}
-                          </td>
-                        ))}
+                        {l.porDia.map((ms, i) => celulaDia(ms, { dia: i, projetoId: l.projetoId, itemChave: null }, "text-tinta-2"))}
                         <td className="px-4 py-2.5 text-right font-semibold">{horasMinutos(l.total)}</td>
                       </tr>
                       {aberto &&
                         l.itens.map((it) => (
                           <tr key={it.itemId} className="border-b border-linha text-[13px] text-suave">
                             <td className="max-w-0 truncate py-1.5 pr-4 pl-10">{it.titulo}</td>
-                            {it.porDia.map((ms, i) => (
-                              <td key={i} className="px-1 py-1.5 text-right">
-                                {horasMinutos(ms)}
-                              </td>
-                            ))}
+                            {it.porDia.map((ms, i) => celulaDia(ms, { dia: i, projetoId: l.projetoId, itemChave: it.itemId }, ""))}
                             <td className="px-4 py-1.5 text-right">{horasMinutos(it.total)}</td>
                           </tr>
                         ))}
@@ -257,8 +326,44 @@ export default function Horas({ versao, aoAvisar }: Props) {
           </div>
         )
       )}
-      <p className="mt-3 text-xs text-apagado">
-        Horas no formato h:mm. Copiar e o CSV usam horas decimais (1,50 = uma hora e meia). Clique num projeto para ver os itens.
+      {celula && (
+        <SessoesDoDia
+          celula={celula}
+          segunda={segunda}
+          sessoes={sessoes}
+          aoFechar={() => setCelula(null)}
+          aoMudar={async (texto) => {
+            await carregar();
+            aoAvisar(texto);
+          }}
+        />
+      )}
+
+      <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-suave">
+        <span>Copiar e CSV:</span>
+        <select
+          aria-label="Formato do apontamento"
+          value={formato}
+          onChange={(e) => trocarFormato(e.target.value as FormatoApontamento)}
+          className="rounded-lg border border-linha bg-cartao px-2 py-1 text-sm text-tinta outline-none focus:border-destaque"
+        >
+          <option value="semana">Tabela da semana (projetos × dias)</option>
+          <option value="linhas">Uma linha por dia e projeto</option>
+        </select>
+        <select
+          aria-label="Arredondamento"
+          value={passo}
+          onChange={(e) => trocarPasso(Number(e.target.value))}
+          className="rounded-lg border border-linha bg-cartao px-2 py-1 text-sm text-tinta outline-none focus:border-destaque"
+        >
+          <option value={0}>Sem arredondar</option>
+          <option value={15}>Arredondar a 15 min</option>
+          <option value={30}>Arredondar a 30 min</option>
+        </select>
+      </div>
+      <p className="mt-2 text-xs text-apagado">
+        Horas no formato h:mm. Copiar e o CSV usam horas decimais (1,50 = uma hora e meia). Clique num projeto para ver os
+        itens e num dia para ajustar as sessões.
       </p>
     </div>
   );

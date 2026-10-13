@@ -4,19 +4,26 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { reconhecerLink } from "../captura/links";
-import { parseCaptura, type Captura as DadosCaptura } from "../captura/parser";
+import { marcacoesDoTitulo, parseCaptura, type Captura as DadosCaptura, type OpcaoPrioridade } from "../captura/parser";
 import { resolverTitulo, tituloPadrao } from "../captura/titulo";
 import { avancarNumeroAtividade, gravarConfig, lerConfig, lerNumeroAtividade } from "../db/config";
-import { criarItem, listarSugestoes } from "../db/itens";
+import { criarItem, listarSugestoes, type Destino } from "../db/itens";
+import { quandoPadrao } from "../ritual/quadro";
 import { listarPrioridades, type Prioridade } from "../db/prioridades";
 import Avancada from "./captura/Avancada";
 import CampoDescricao from "./captura/CampoDescricao";
-import Formulario, { FORMULARIO_VAZIO, type ValoresFormulario } from "./captura/Formulario";
+import Formulario, { FORMULARIO_VAZIO, Opcoes, type ValoresFormulario } from "./captura/Formulario";
 import Origem from "./Origem";
 
 const LARGURA = 640;
 
 type Modo = "formulario" | "avancado";
+
+const DESTINOS: { valor: Destino; nome: string }[] = [
+  { valor: "inbox", nome: "Chegou" },
+  { valor: "hoje", nome: "Hoje" },
+  { valor: "a_fazer", nome: "A fazer" },
+];
 
 interface Sugestoes {
   pessoas: string[];
@@ -42,19 +49,35 @@ function esconder(devolverFoco: boolean) {
   return invoke("esconder_captura", { devolverFoco });
 }
 
-/** Monta o item a partir do formulário, com o link copiado se houver. */
-function capturaDoFormulario(valores: ValoresFormulario, link: string | null): DadosCaptura {
+/**
+ * Monta o item a partir do formulário, com o link copiado se houver. As marcações do modo
+ * avançado (@, #, !, >) também valem no título; um campo preenchido vence a marcação.
+ */
+function capturaDoFormulario(valores: ValoresFormulario, link: string | null, prioridades: OpcaoPrioridade[]): DadosCaptura {
+  const doTitulo = marcacoesDoTitulo(valores.titulo, new Date(), prioridades);
   const reconhecido = link ? reconhecerLink(link) : null;
+  const comLink: Pick<DadosCaptura, "link" | "origem" | "idExterno"> = doTitulo.link
+    ? { link: doTitulo.link, origem: doTitulo.origem, idExterno: doTitulo.idExterno }
+    : { link: reconhecido?.url ?? link, origem: reconhecido?.origem ?? "manual", idExterno: reconhecido?.idExterno ?? null };
   return {
-    titulo: valores.titulo.trim(),
-    pessoa: valores.pessoa.trim() || null,
-    projeto: valores.projeto.trim() || null,
-    prioridade: valores.prioridadeId,
-    prazo: valores.prazo,
-    link: reconhecido?.url ?? link,
-    origem: reconhecido?.origem ?? "manual",
-    idExterno: reconhecido?.idExterno ?? null,
+    titulo: doTitulo.titulo.trim(),
+    pessoa: valores.pessoa.trim() || doTitulo.pessoa,
+    projeto: valores.projeto.trim() || doTitulo.projeto,
+    prioridade: valores.prioridadeId ?? doTitulo.prioridade,
+    prazo: valores.prazo ?? doTitulo.prazo,
+    ...comLink,
   };
+}
+
+/** O que o título do formulário marcou, para mostrar no rodapé: "@carlos · #infra · sexta". */
+function resumoDasMarcacoes(valores: ValoresFormulario, captura: DadosCaptura, prioridades: Prioridade[]): string | null {
+  const partes = [
+    !valores.pessoa.trim() && captura.pessoa && `@${captura.pessoa}`,
+    !valores.projeto.trim() && captura.projeto && `#${captura.projeto}`,
+    !valores.prioridadeId && captura.prioridade && prioridades.find((p) => p.id === captura.prioridade)?.nome,
+    !valores.prazo && captura.prazo && `prazo ${captura.prazo.split("-").reverse().slice(0, 2).join("/")}`,
+  ].filter(Boolean);
+  return partes.length > 0 ? partes.join(" · ") : null;
 }
 
 export default function Captura() {
@@ -69,6 +92,8 @@ export default function Captura() {
   const [prioridades, setPrioridades] = useState<Prioridade[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  /** Coluna do Meu dia em que a tarefa entra; a última escolha fica lembrada. */
+  const [destino, setDestino] = useState<Destino>("inbox");
   const momentoAtalho = useRef<number | null>(null);
   // Link anexado na última captura: não volta sozinho na próxima, porque provavelmente
   // ainda está na área de transferência e não tem relação com o novo pedido.
@@ -78,6 +103,7 @@ export default function Captura() {
 
   useEffect(() => {
     lerConfig("modo_captura").then((salvo) => salvo === "avancado" && setModo("avancado"));
+    lerConfig("destino_captura").then((salvo) => (salvo === "hoje" || salvo === "a_fazer") && setDestino(salvo));
   }, []);
 
   // Cada atalho: lê a área de transferência, atualiza as listas e foca o título.
@@ -141,7 +167,7 @@ export default function Captura() {
     () =>
       modo === "avancado"
         ? parseCaptura(texto, new Date(), linkCopiado, prioridades)
-        : capturaDoFormulario(valores, linkCopiado),
+        : capturaDoFormulario(valores, linkCopiado, prioridades),
     [modo, texto, valores, linkCopiado, prioridades],
   );
 
@@ -174,7 +200,7 @@ export default function Captura() {
     setSalvando(true);
     try {
       const duracao = momentoAtalho.current ? Date.now() - momentoAtalho.current : null;
-      await criarItem({ ...captura, titulo: titulo.titulo }, duracao, descricao);
+      await criarItem({ ...captura, titulo: titulo.titulo }, duracao, descricao, destino, quandoPadrao(new Date()));
       if (titulo.usouPadrao) await avancarNumeroAtividade(numero);
       if (captura.link === linkCopiado) ultimoLinkUsado.current = linkCopiado;
       await emit("item:criado");
@@ -189,9 +215,9 @@ export default function Captura() {
     }
   }
 
-  // Enter salva e Esc fecha, de qualquer campo. Campos que usam essas teclas
-  // (sugestões, calendário) marcam o evento com preventDefault antes.
-  function aoTeclar(e: React.KeyboardEvent) {
+  // Enter salva e Esc fecha, de qualquer lugar da janela (não só dos campos). Campos que
+  // usam essas teclas (sugestões, calendário) marcam o evento com preventDefault antes.
+  function aoTeclar(e: React.KeyboardEvent | KeyboardEvent) {
     if (e.defaultPrevented) return;
     // Shift+Enter na descrição quebra a linha.
     if (e.key === "Enter" && e.shiftKey && e.target instanceof HTMLTextAreaElement) return;
@@ -208,8 +234,20 @@ export default function Captura() {
     }
   }
 
+  // Sem nada focado (a janela acabou de aparecer), as teclas chegam no body, fora da caixa.
+  const teclarAtual = useRef(aoTeclar);
+  teclarAtual.current = aoTeclar;
+  useEffect(() => {
+    const aoTeclarNaJanela = (e: KeyboardEvent) => {
+      if (e.target === document.body || e.target === document.documentElement) teclarAtual.current(e);
+    };
+    window.addEventListener("keydown", aoTeclarNaJanela);
+    return () => window.removeEventListener("keydown", aoTeclarNaJanela);
+  }, []);
+
   return (
-    <div ref={caixa} onKeyDown={aoTeclar} className="bg-folha px-[22px] pt-4 pb-3.5 text-tinta">
+    // tabIndex: clicar num espaço vazio foca a caixa, e o Enter continua salvando.
+    <div ref={caixa} tabIndex={-1} onKeyDown={aoTeclar} className="bg-folha px-[22px] pt-4 pb-3.5 text-tinta outline-none">
       {modo === "formulario" ? (
         <Formulario
           valores={valores}
@@ -226,6 +264,7 @@ export default function Captura() {
             setDescricao(d);
             setErro(null);
           }}
+          aoSalvar={salvar}
         />
       ) : (
         <Avancada
@@ -248,9 +287,24 @@ export default function Captura() {
               setDescricao(d);
               setErro(null);
             }}
+            aoSalvar={salvar}
           />
         </div>
       )}
+
+      <div className="mt-3.5">
+        <span className="block text-xs font-semibold text-suave">Entra em</span>
+        <Opcoes
+          rotulo="Coluna do Meu dia"
+          valor={destino}
+          aoEscolher={(d) => {
+            setDestino(d);
+            setErro(null);
+            gravarConfig("destino_captura", d).catch(() => {});
+          }}
+          opcoes={DESTINOS}
+        />
+      </div>
 
       {captura.link && (
         <div className="mt-3 flex">
@@ -277,9 +331,11 @@ export default function Captura() {
         {erro ? (
           <span className="text-atraso">{erro}</span>
         ) : modo === "avancado" ? (
-          <span>Use @pessoa, #projeto, !prioridade e &gt;prazo. Enter salva, Esc fecha.</span>
+          <span className="truncate">Use @pessoa, #projeto, !prioridade e &gt;prazo. Enter salva, Esc fecha.</span>
+        ) : resumoDasMarcacoes(valores, captura, prioridades) ? (
+          <span className="truncate text-destaque-tinta">Do título: {resumoDasMarcacoes(valores, captura, prioridades)}. Enter salva.</span>
         ) : (
-          <span>Enter salva, Esc fecha.</span>
+          <span className="truncate">Enter salva, Esc fecha. @pessoa, #projeto, !prioridade e &gt;prazo valem no título.</span>
         )}
         <button
           type="button"
@@ -289,6 +345,15 @@ export default function Captura() {
           className="ml-auto shrink-0 hover:text-tinta"
         >
           {modo === "formulario" ? "Modo avançado" : "Modo formulário"} <kbd className="font-sans">Ctrl+.</kbd>
+        </button>
+        <button
+          type="button"
+          disabled={salvando}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={salvar}
+          className="shrink-0 rounded-lg bg-destaque px-4 py-1.5 text-sm font-semibold text-folha hover:opacity-90 disabled:opacity-60"
+        >
+          Salvar <kbd className="ml-1 font-sans font-normal opacity-70">Enter</kbd>
         </button>
       </div>
     </div>

@@ -16,6 +16,12 @@ const CAMINHOS = {
   texto: "M3 4h10M3 7h10M3 10h7M3 13h5",
   lixeira: "M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 9h5.6l.7-9",
   busca: "M7 11.5a4.5 4.5 0 100-9 4.5 4.5 0 000 9zM10.5 10.5L13.5 13.5",
+  ampulheta: "M4.5 2.5h7M4.5 13.5h7M5.5 2.5c0 3 5 3 5 5.5s-5 2.5-5 5.5M10.5 2.5c0 3-5 3-5 5.5s5 2.5 5 5.5",
+  copiar: "M5.5 5.5h7v7h-7zM3.5 10.5v-7h7",
+  janela: "M2.5 3.5h11v9h-11zM8.5 8.5h4v3h-4z",
+  pausa: "M6 4v8M10 4v8",
+  clipe: "M10.5 5.5l-4.3 4.3a1.4 1.4 0 002 2l5-5a2.8 2.8 0 00-4-4l-5 5a4.2 4.2 0 006 6l4-4",
+  baixar: "M8 2.5v8M4.5 7L8 10.5 11.5 7M3 13.5h10",
 } as const;
 
 export type NomeIcone = keyof typeof CAMINHOS;

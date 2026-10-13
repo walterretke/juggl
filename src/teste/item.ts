@@ -14,6 +14,8 @@ export function item(id: string, extra: Partial<Item> = {}): Item {
     prometido_para: null,
     dia_planejado: null,
     quando: null,
+    aguardando_quem: null,
+    aguardando_ate: null,
     link: null,
     origem: "manual",
     id_externo: null,
@@ -27,6 +29,13 @@ export function item(id: string, extra: Partial<Item> = {}): Item {
     tempo_ms: 0,
     cobrancas: 0,
     ultima_cobranca: null,
+    status_anterior: null,
+    agenda_inicio: null,
+    agenda_fim: null,
+    subtarefas: 0,
+    subtarefas_feitas: 0,
+    anexos: 0,
+    encerramento: null,
     ...extra,
   };
 }

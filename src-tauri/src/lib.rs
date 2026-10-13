@@ -87,6 +87,24 @@ fn migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/0005_meu_dia.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 6,
+            description: "refinamento",
+            sql: include_str!("../migrations/0006_refinamento.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 7,
+            description: "tarefas",
+            sql: include_str!("../migrations/0007_tarefas.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 8,
+            description: "agenda_e_anexos",
+            sql: include_str!("../migrations/0008_agenda_e_anexos.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
@@ -225,6 +243,67 @@ fn salvar_csv(app: AppHandle, nome: String, conteudo: String) -> Result<String, 
     Ok(caminho.to_string_lossy().into_owned())
 }
 
+/// Nome de arquivo seguro para gravar no disco: sem pastas nem caracteres proibidos no Windows.
+fn nome_seguro(nome: &str) -> String {
+    let limpo: String = nome
+        .chars()
+        .map(|c| if matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') || c.is_control() { '_' } else { c })
+        .collect();
+    let limpo = limpo.trim().trim_matches('.').to_string();
+    if limpo.is_empty() { "anexo".to_string() } else { limpo }
+}
+
+/// Primeiro caminho livre na pasta: "nome.pdf", "nome (2).pdf", "nome (3).pdf"...
+fn caminho_livre(pasta: &std::path::Path, nome: &str) -> PathBuf {
+    let caminho = pasta.join(nome);
+    if !caminho.exists() {
+        return caminho;
+    }
+    let (base, ext) = match nome.rfind('.') {
+        Some(i) if i > 0 => (&nome[..i], &nome[i..]),
+        _ => (nome, ""),
+    };
+    (2..)
+        .map(|n| pasta.join(format!("{base} ({n}){ext}")))
+        .find(|c| !c.exists())
+        .expect("sempre há um nome livre")
+}
+
+fn decodificar_anexo(dados: &str) -> Result<Vec<u8>, String> {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD
+        .decode(dados)
+        .map_err(|e| format!("Anexo corrompido: {e}"))
+}
+
+/// Abre um anexo no programa padrão do sistema: grava uma cópia na pasta temporária do Juggl.
+#[tauri::command]
+fn abrir_anexo(app: AppHandle, nome: String, dados: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let bytes = decodificar_anexo(&dados)?;
+    let pasta = std::env::temp_dir().join("juggl-anexos");
+    fs::create_dir_all(&pasta).map_err(|e| format!("Não consegui criar {}: {e}", pasta.display()))?;
+    let caminho = pasta.join(nome_seguro(&nome));
+    fs::write(&caminho, bytes).map_err(|e| format!("Não consegui gravar {}: {e}", caminho.display()))?;
+    app.opener()
+        .open_path(caminho.to_string_lossy(), None::<&str>)
+        .map_err(|e| format!("Não consegui abrir {}: {e}", caminho.display()))
+}
+
+/// Grava um anexo na pasta Downloads (sem sobrescrever) e devolve o caminho.
+#[tauri::command]
+fn salvar_anexo(app: AppHandle, nome: String, dados: String) -> Result<String, String> {
+    let bytes = decodificar_anexo(&dados)?;
+    let pasta = app
+        .path()
+        .download_dir()
+        .or_else(|_| app.path().home_dir())
+        .map_err(|_| "Não encontrei a pasta Downloads nem a pasta pessoal.".to_string())?;
+    let caminho = caminho_livre(&pasta, &nome_seguro(&nome));
+    fs::write(&caminho, bytes).map_err(|e| format!("Não foi possível gravar {}: {e}", caminho.display()))?;
+    Ok(caminho.to_string_lossy().into_owned())
+}
+
 /// Liga ou desliga o uso do texto selecionado (configuração salva no banco).
 #[tauri::command]
 fn definir_usar_selecao(estado: State<UsarSelecao>, usar: bool) {
@@ -345,9 +424,9 @@ fn atualizar_bandeja(app: AppHandle, menu: State<MenuFoco>, foco: Option<String>
 
 fn criar_bandeja(app: &tauri::App) -> tauri::Result<()> {
     let foco = MenuItem::with_id(app, "foco", SEM_FOCO, false, None::<&str>)?;
-    let pausar = MenuItem::with_id(app, "pausar", "Pausar", false, None::<&str>)?;
+    let pausar = MenuItem::with_id(app, "pausar", "Parar timer", false, None::<&str>)?;
     let separador = PredefinedMenuItem::separator(app)?;
-    let capturar = MenuItem::with_id(app, "capturar", "Capturar", true, None::<&str>)?;
+    let capturar = MenuItem::with_id(app, "capturar", "Nova tarefa", true, None::<&str>)?;
     let abrir = MenuItem::with_id(app, "abrir", "Abrir o Juggl", true, None::<&str>)?;
     let sair = MenuItem::with_id(app, "sair", "Sair", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&foco, &pausar, &separador, &capturar, &abrir, &sair])?;
@@ -442,6 +521,8 @@ pub fn run() {
             definir_usar_selecao,
             tempo_ocioso,
             salvar_csv,
+            abrir_anexo,
+            salvar_anexo,
             devops::devops_salvar_token,
             devops::devops_apagar_token,
             devops::devops_tem_token,

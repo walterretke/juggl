@@ -97,7 +97,7 @@ export function pontuar(item: Item, agora: Date, pontosPrioridade: Map<string, n
   }
 
   if (item.dia_planejado === dataLocalIso(agora)) {
-    partes.push({ componente: "dia", pontos: PESOS.doDia, motivo: "é uma das 3 do dia" });
+    partes.push({ componente: "dia", pontos: PESOS.doDia, motivo: "está em Hoje" });
   }
 
   partes.sort((a, b) => b.pontos - a.pontos);

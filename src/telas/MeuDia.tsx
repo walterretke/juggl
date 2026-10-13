@@ -9,11 +9,12 @@ import {
   fecharDia,
   itensDoQuadro,
   marcarDiaPlanejado,
-  MAX_DO_DIA,
   type Destino,
 } from "../db/ritual";
 import { montarQuadro, NOME_QUANDO, proximoQuando, quandoPadrao } from "../ritual/quadro";
+import { ETIQUETA_PRIORIDADE, FAIXA_PRIORIDADE } from "./cores";
 import { COR_ORIGEM } from "./origens";
+import SeletorSom from "./SeletorSom";
 
 interface Props {
   /** Muda quando os itens mudam em outra tela, para recarregar. */
@@ -30,6 +31,14 @@ interface Props {
   aoAvisar: (texto: string) => void;
   /** Um cartão começou a ser arrastado (para soltar também na barra lateral). */
   aoArrastar: (item: Item) => void;
+  /** Copia o resumo da daily (ontem, hoje, bloqueios). */
+  aoCopiarDaily: () => void;
+  /** Som do foco (na coluna Fazendo agora). */
+  som: React.ComponentProps<typeof SeletorSom>;
+  /** Clique num cartão: abre a tarefa para editar. */
+  aoAbrir: (item: Item) => void;
+  /** Atalho global da captura, para o primeiro uso. */
+  atalhoCaptura: string;
 }
 
 type Coluna = "chegou" | "hoje" | "fazendo" | "feito" | "depois";
@@ -43,23 +52,36 @@ function Etiqueta({ children, classe = "bg-etiqueta text-tinta-2" }: { children:
 }
 
 interface PropsCartao {
-item: Item;
-hoje: Date;
-/** Atributos de arrasto do cartão. */
-arrasto: React.HTMLAttributes<HTMLElement>;
-numero?: number;
-children?: React.ReactNode;
+  item: Item;
+  hoje: Date;
+  /** Atributos de arrasto do cartão. */
+  arrasto: React.HTMLAttributes<HTMLElement>;
+  aoAbrir: (item: Item) => void;
+  numero?: number;
+  children?: React.ReactNode;
+}
+
+/** Clique no cartão abre a tarefa, menos quando o clique foi num botão dentro dele. */
+function aoClicarCartao(item: Item, aoAbrir: (item: Item) => void) {
+  return (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    aoAbrir(item);
+  };
 }
 
 /** Cartão de um item no quadro: título, quem pediu, cobranças, promessa e prazo. */
-function Cartao({ item, hoje, arrasto, numero, children }: PropsCartao) {
+function Cartao({ item, hoje, arrasto, aoAbrir, numero, children }: PropsCartao) {
   const prazo = item.prazo ? descreverPrazo(item.prazo, hoje) : null;
   const promessa = item.prometido_para ? descreverPrazo(item.prometido_para, hoje) : null;
   const urgente = (t: string | null) => !!t && (t.startsWith("atrasado") || t === "hoje");
   return (
     <article
       {...arrasto}
-      className="flex cursor-grab flex-col gap-1 rounded-xl bg-cartao px-3 py-2.5 shadow-[0_0_0_1px_var(--color-linha)] active:cursor-grabbing"
+      onClick={aoClicarCartao(item, aoAbrir)}
+      title="Clique para abrir. Arraste para mudar de coluna."
+      className={`flex cursor-pointer flex-col gap-1 rounded-xl bg-cartao px-3 py-2.5 shadow-[0_0_0_1px_var(--color-linha)] hover:shadow-[0_0_0_1.5px_var(--color-destaque)] active:cursor-grabbing ${
+        item.prioridade_cor ? `border-l-4 ${FAIXA_PRIORIDADE[item.prioridade_cor]}` : ""
+      }`}
     >
       <div className="flex items-baseline gap-2">
         {numero !== undefined ? (
@@ -79,10 +101,20 @@ function Cartao({ item, hoje, arrasto, numero, children }: PropsCartao) {
           <Etiqueta classe={urgente(promessa) ? "bg-atraso-claro text-atraso" : undefined}>prometido {promessa}</Etiqueta>
         )}
         {prazo && <Etiqueta classe={urgente(prazo) ? "bg-atraso-claro text-atraso" : undefined}>{prazo}</Etiqueta>}
-        {item.prioridade && <Etiqueta>{item.prioridade}</Etiqueta>}
+        {item.prioridade && <Etiqueta classe={ETIQUETA_PRIORIDADE[item.prioridade_cor ?? "cinza"]}>{item.prioridade}</Etiqueta>}
         {item.status === "pausado" && <Etiqueta>Pausado</Etiqueta>}
+        {item.subtarefas > 0 && (
+          <Etiqueta classe={item.subtarefas_feitas === item.subtarefas ? "bg-ok-claro text-ok" : undefined}>
+            ☑ {item.subtarefas_feitas}/{item.subtarefas}
+          </Etiqueta>
+        )}
+        {item.anexos > 0 && <Etiqueta>📎 {item.anexos}</Etiqueta>}
       </div>
-      {item.nota_pausa && <p className="truncate text-[13px] text-suave">Parou em: {item.nota_pausa}</p>}
+      {item.nota_pausa && (
+        <p className="line-clamp-2 text-[13px] text-suave" title={item.nota_pausa}>
+          Parou em: {item.nota_pausa}
+        </p>
+      )}
     </article>
   );
 }
@@ -99,7 +131,7 @@ async function horasDeHoje(agora: Date): Promise<number> {
 }
 
 /**
- * Meu dia: o dia como um fluxo, em colunas. O que chegou, as 3 de hoje (cada uma com um
+ * Meu dia: o dia como um fluxo, em colunas. O que chegou, o que é para hoje (cada uma com um
  * "quando"), o que está em foco e o que já foi feito; o resto de A fazer fica em Depois.
  * Planejar o dia é arrastar cartões para Hoje; Fechar o dia decide o destino do que sobrou.
  */
@@ -114,6 +146,10 @@ export default function MeuDia({
   aoAlterar,
   aoAvisar,
   aoArrastar,
+  aoCopiarDaily,
+  aoAbrir,
+  som,
+  atalhoCaptura,
 }: Props) {
   const [itens, setItens] = useState<Item[] | null>(null);
   const [feitos, setFeitos] = useState<Item[]>([]);
@@ -156,17 +192,13 @@ export default function MeuDia({
   const sessao = foco ? agora - new Date(foco.inicio).getTime() : 0;
   const totalDepois = quadro.depois.reduce((n, g) => n + g.itens.length, 0);
   // Depois fica aberto enquanto Hoje tem vaga, para escolher dali; depois recolhe.
-  const mostrarDepois = depoisAberto ?? quadro.hoje.length < MAX_DO_DIA;
+  const mostrarDepois = depoisAberto ?? quadro.hoje.length === 0;
 
   const etapaFeita = [quadro.chegou.length === 0, planejado, fechado, fechado];
   const etapaAtual = etapaFeita.findIndex((f) => !f);
 
   async function planejar(item: Item) {
     if (item.dia_planejado === diaHoje && item.status !== "inbox") return;
-    if (quadro.hoje.length >= MAX_DO_DIA) {
-      aoAvisar(`Só ${MAX_DO_DIA} por dia. Tire uma de Hoje antes.`);
-      return;
-    }
     const mudancas: Mudancas = { dia_planejado: diaHoje, quando: item.quando ?? quandoPadrao(new Date()) };
     if (item.status === "inbox" || item.status === "feito") mudancas.status = "a_fazer";
     await marcarDiaPlanejado();
@@ -285,40 +317,75 @@ export default function MeuDia({
 
   const botaoPequeno = "rounded-md px-2 text-[13px] font-semibold text-suave hover:bg-etiqueta hover:text-tinta";
 
+  // Banco vazio: a primeira vez de alguém (um colega instalando). Três passos em vez de colunas vazias.
+  const primeiraVez = itens.length === 0 && feitos.length === 0 && !foco;
+
   return (
     <div className="flex flex-col gap-5 pb-6">
-      <ol aria-label="Fluxo do dia" className="-mt-3 flex flex-wrap gap-1.5">
-        {ETAPAS.map((etapa, i) => {
-          const feita = etapaFeita[i];
-          const atual = i === etapaAtual;
-          const conteudo = (
-            <>
-              <b
-                className={`flex size-5 items-center justify-center rounded-full text-[11px] ${
-                  feita ? "bg-ok text-folha" : atual ? "bg-destaque text-folha" : "bg-folha text-suave"
-                }`}
-              >
-                {feita ? "✓" : i + 1}
-              </b>
-              {etapa}
-            </>
-          );
-          const classe = `flex items-center gap-2 rounded-full py-1 pr-3 pl-1 text-[13px] ${
-            feita ? "bg-ok-claro text-ok" : atual ? "bg-destaque-claro font-semibold text-destaque-tinta" : "bg-etiqueta text-suave"
-          }`;
-          return (
-            <li key={etapa}>
-              {i === 3 && !fechado ? (
-                <button type="button" onClick={abrirFechamento} className={`${classe} ring-1 ring-destaque hover:opacity-90`}>
-                  {conteudo}
-                </button>
-              ) : (
-                <span className={classe}>{conteudo}</span>
-              )}
-            </li>
-          );
-        })}
-      </ol>
+      {primeiraVez && (
+        <section aria-label="Primeiros passos" className="rounded-2xl bg-cartao px-6 py-5 shadow-[0_0_0_1px_var(--color-linha)]">
+          <h2 className="font-titulo text-[22px] font-medium">Bem-vindo ao Juggl</h2>
+          <p className="mt-1 text-sm text-suave">Tudo fica neste computador. Três passos para o primeiro dia:</p>
+          <ol className="mt-4 grid gap-3 sm:grid-cols-3">
+            {[
+              ["Anote", `Em qualquer janela, aperte ${atalhoCaptura}, escreva a tarefa e Enter. Leva 3 segundos e você volta ao que estava fazendo.`],
+              ["Planeje", "Aqui em Meu dia, arraste até 3 pedidos para Hoje. É o que importa no dia."],
+              ["Foque", "Clique em Focar: o timer conta as horas por projeto, prontas para o apontamento de sexta."],
+            ].map(([titulo, texto], i) => (
+              <li key={titulo} className="rounded-xl bg-folha px-4 py-3">
+                <p className="flex items-center gap-2 text-[15px] font-semibold">
+                  <b className="flex size-5 items-center justify-center rounded-full bg-destaque text-[11px] text-folha">{i + 1}</b>
+                  {titulo}
+                </p>
+                <p className="mt-1 text-[13px] leading-snug text-suave">{texto}</p>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-3 text-[13px] text-apagado">Ctrl+K busca qualquer coisa, e ! anota o que irritar no uso.</p>
+        </section>
+      )}
+      <div className="-mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <ol aria-label="Fluxo do dia" className="flex flex-1 flex-wrap gap-1.5">
+          {ETAPAS.map((etapa, i) => {
+            const feita = etapaFeita[i];
+            const atual = i === etapaAtual;
+            const conteudo = (
+              <>
+                <b
+                  className={`flex size-5 items-center justify-center rounded-full text-[11px] ${
+                    feita ? "bg-ok text-folha" : atual ? "bg-destaque text-folha" : "bg-folha text-suave"
+                  }`}
+                >
+                  {feita ? "✓" : i + 1}
+                </b>
+                {etapa}
+              </>
+            );
+            const classe = `flex items-center gap-2 rounded-full py-1 pr-3 pl-1 text-[13px] ${
+              feita ? "bg-ok-claro text-ok" : atual ? "bg-destaque-claro font-semibold text-destaque-tinta" : "bg-etiqueta text-suave"
+            }`;
+            return (
+              <li key={etapa}>
+                {i === 3 && !fechado ? (
+                  <button type="button" onClick={abrirFechamento} className={`${classe} ring-1 ring-destaque hover:opacity-90`}>
+                    {conteudo}
+                  </button>
+                ) : (
+                  <span className={classe}>{conteudo}</span>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+        <button
+          type="button"
+          onClick={aoCopiarDaily}
+          title="Copia o que foi feito ontem, o que é para hoje e o que está travado (Ctrl+C)"
+          className="rounded-lg px-3 py-1 text-[13px] font-semibold text-suave hover:bg-etiqueta hover:text-tinta"
+        >
+          Copiar para a daily <kbd className="ml-1 font-sans font-normal text-apagado">Ctrl+C</kbd>
+        </button>
+      </div>
 
       {fechando && (
         <section aria-label="Fechar o dia" className="flex flex-col gap-3 rounded-2xl bg-cartao px-5 py-4 shadow-[0_0_0_1.5px_var(--color-destaque)]">
@@ -390,7 +457,7 @@ export default function MeuDia({
             {quadro.chegou.length === 0 ? "Nada esperando triagem." : "Pedidos novos. Arraste para Hoje ou para Depois."}
           </p>
           {quadro.chegou.map((item) => (
-            <Cartao key={item.id} item={item} hoje={hoje} arrasto={arrastavel(item)}>
+            <Cartao key={item.id} item={item} hoje={hoje} arrasto={arrastavel(item)} aoAbrir={aoAbrir}>
               <button type="button" onClick={() => planejar(item)} className={botaoPequeno}>
                 + Hoje
               </button>
@@ -399,17 +466,19 @@ export default function MeuDia({
         </div>
 
         <div {...alvoDaColuna("hoje")} className={classeColuna("hoje", "bg-cartao shadow-[0_0_0_1px_var(--color-linha)]")}>
-          {tituloColuna("Hoje", `${quadro.hoje.length} de ${MAX_DO_DIA}`)}
-          <p className="px-1 text-[13px] text-suave">As 3 do dia. Clique no "quando" para trocar.</p>
+          {tituloColuna("Hoje", String(quadro.hoje.length))}
+          <p className="px-1 text-[13px] text-suave">O que você vai fazer hoje. Clique no "quando" para trocar.</p>
           {quadro.hoje.map((item, i) =>
             item.status === "em_foco" ? (
-              <p key={item.id} className="flex items-center gap-2 rounded-xl border border-dashed border-destaque px-3 py-2 text-[13px] text-destaque-tinta">
+              <p key={item.id} className="flex items-start gap-2 rounded-xl border border-dashed border-destaque px-3 py-2 text-[13px] text-destaque-tinta">
                 <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-destaque-claro text-[11px] font-bold">{i + 1}</span>
-                <span className="min-w-0 flex-1 truncate">{item.titulo}</span>
-                <span className="shrink-0">em foco</span>
+                <span className="min-w-0 flex-1 leading-snug break-words" title={item.titulo}>
+                  {item.titulo}
+                </span>
+                <span className="shrink-0 self-start">em foco</span>
               </p>
             ) : (
-              <Cartao key={item.id} item={item} hoje={hoje} arrasto={arrastavel(item)} numero={i + 1}>
+              <Cartao key={item.id} item={item} hoje={hoje} arrasto={arrastavel(item)} aoAbrir={aoAbrir} numero={i + 1}>
                 <button
                   type="button"
                   title="Quando você pretende fazer (clique para trocar)"
@@ -424,11 +493,11 @@ export default function MeuDia({
               </Cartao>
             ),
           )}
-          {Array.from({ length: Math.max(0, MAX_DO_DIA - quadro.hoje.length) }, (_, i) => (
-            <p key={i} className="rounded-xl border-[1.5px] border-dashed border-linha px-3 py-2.5 text-[13px] text-apagado">
-              Vaga livre. Arraste um item para cá.
+          {quadro.hoje.length === 0 && (
+            <p className="rounded-xl border-[1.5px] border-dashed border-linha px-3 py-2.5 text-[13px] text-apagado">
+              Arraste itens para cá.
             </p>
-          ))}
+          )}
           {!planejado && (
             <button
               type="button"
@@ -449,7 +518,12 @@ export default function MeuDia({
         >
           {tituloColuna("Fazendo agora")}
           {foco ? (
-            <article {...arrastavel(foco.item)} className="flex cursor-grab flex-col gap-1 rounded-xl bg-folha px-3 py-3">
+            <article
+              {...arrastavel(foco.item)}
+              onClick={aoClicarCartao(foco.item, aoAbrir)}
+              title="Clique para abrir a tarefa"
+              className="flex cursor-pointer flex-col gap-1 rounded-xl bg-folha px-3 py-3"
+            >
               <p className="text-[15px] leading-snug font-semibold break-words">{foco.item.titulo}</p>
               <p className="text-[13px] text-suave">
                 {[foco.item.pessoa, foco.item.projeto].filter(Boolean).join(" · ")}
@@ -460,22 +534,31 @@ export default function MeuDia({
                 {foco.item.tempo_ms > 0 ? `${formatarDuracao(foco.item.tempo_ms + sessao)} no total neste item` : "Primeira sessão neste item"}
               </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                <button type="button" onClick={aoPausar} className="rounded-lg border border-linha px-3 py-1 text-[13px] font-semibold hover:bg-etiqueta">
-                  Pausar
+                <button
+                  type="button"
+                  onClick={aoPausar}
+                  title="Para o timer. A tarefa continua aberta."
+                  className="rounded-lg bg-destaque px-3 py-1 text-[13px] font-semibold text-folha hover:opacity-90"
+                >
+                  Parar timer
                 </button>
                 <button
                   type="button"
                   onClick={aoConcluir}
-                  className="rounded-lg bg-destaque px-3 py-1 text-[13px] font-semibold text-folha hover:opacity-90"
+                  title="Para o timer e fecha a tarefa (Z desfaz)"
+                  className="rounded-lg border border-linha px-3 py-1 text-[13px] font-semibold hover:bg-etiqueta"
                 >
-                  Concluir
+                  Concluir tarefa
                 </button>
+              </div>
+              <div className="mt-1">
+                <SeletorSom {...som} compacto />
               </div>
             </article>
           ) : (
             <p className="px-1 text-[13px] text-suave">Nada em foco. Clique em Focar num item de Hoje ou arraste um cartão para cá.</p>
           )}
-          <p className="px-1 text-[13px] text-apagado">Uma coisa por vez. Pausar guarda onde você parou.</p>
+          <p className="px-1 text-[13px] text-apagado">Uma coisa por vez. Parar o timer guarda onde você parou.</p>
         </div>
 
         <div {...alvoDaColuna("feito")} className={classeColuna("feito", "bg-lateral")}>
@@ -485,7 +568,9 @@ export default function MeuDia({
             <article
               key={item.id}
               {...arrastavel(item)}
-              className="cursor-grab rounded-xl bg-cartao px-3 py-2 text-[14px] text-suave line-through decoration-apagado shadow-[0_0_0_1px_var(--color-linha)]"
+              onClick={() => aoAbrir(item)}
+              title="Clique para abrir. Arraste de volta para reabrir."
+              className="cursor-pointer rounded-xl bg-cartao px-3 py-2 text-[14px] text-suave line-through decoration-apagado shadow-[0_0_0_1px_var(--color-linha)]"
             >
               {item.titulo}
             </article>
@@ -517,7 +602,7 @@ export default function MeuDia({
               </h3>
               <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
                 {grupo.itens.map((item) => (
-                  <Cartao key={item.id} item={item} hoje={hoje} arrasto={arrastavel(item)}>
+                  <Cartao key={item.id} item={item} hoje={hoje} arrasto={arrastavel(item)} aoAbrir={aoAbrir}>
                     <button type="button" onClick={() => planejar(item)} className={botaoPequeno}>
                       + Hoje
                     </button>

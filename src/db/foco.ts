@@ -42,14 +42,15 @@ export async function itemEmFoco(): Promise<Foco | null> {
 /**
  * Encerra a sessão do item em foco: grava foco_fim com a duração e a nota de onde parou,
  * e muda o status (pausado, ou feito ao concluir). `quando` permite fechar no passado,
- * no último pulso, quando o app foi fechado ou o computador dormiu.
+ * no último pulso, quando o app foi fechado ou o computador dormiu. Ao concluir, devolve o
+ * id do evento `concluido` (para desfazer).
  */
 export async function encerrarFoco(
   foco: Foco,
   motivo: MotivoFim,
   nota: string | null = null,
   quando = agoraIso(),
-): Promise<void> {
+): Promise<string | null> {
   const duracao = Math.max(0, new Date(quando).getTime() - new Date(foco.inicio).getTime());
   await registrarEvento(
     foco.item.id,
@@ -59,12 +60,14 @@ export async function encerrarFoco(
   );
   const concluido = motivo === "concluido";
   await gravarCampos(foco.item.id, { status: concluido ? "feito" : "pausado" });
-  if (concluido) await registrarEvento(foco.item.id, "concluido", { de: "em_foco" }, quando);
+  // Ao concluir, a nota é a mensagem de encerramento (opcional, do overlay de foco).
+  return concluido ? registrarEvento(foco.item.id, "concluido", { de: "em_foco", mensagem: nota?.trim() || null }, quando) : null;
 }
 
 /** Põe o item em foco. Quem estava em foco antes precisa ser encerrado antes (ver `trocarFoco`). */
 async function iniciarFoco(itemId: string, de: string): Promise<void> {
-  await gravarCampos(itemId, { status: "em_foco" });
+  // Focar num item que estava esperando alguém encerra a espera.
+  await gravarCampos(itemId, { status: "em_foco", aguardando_quem: null, aguardando_ate: null });
   await registrarEvento(itemId, "foco_inicio", { de });
   await gravarConfig(CHAVE_PULSO, agoraIso());
 }

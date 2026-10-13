@@ -11,17 +11,17 @@ export default function PedidoNota({ titulo, aoConfirmar, aoCancelar }: Props) {
   const [nota, setNota] = useState("");
   return (
     <div
-      className="fixed inset-0 z-10 flex items-start justify-center bg-black/30 pt-24"
+      className="fixed inset-0 z-10 flex items-start justify-center overflow-y-auto bg-black/30 p-4 sm:pt-24"
       onMouseDown={(e) => e.target === e.currentTarget && aoCancelar()}
     >
       <form
-        className="w-[min(520px,90vw)] rounded-2xl bg-folha p-6 text-tinta shadow-2xl ring-1 ring-linha"
+        className="w-[min(520px,100%)] rounded-2xl bg-folha p-6 text-tinta shadow-2xl ring-1 ring-linha"
         onSubmit={(e) => {
           e.preventDefault();
           aoConfirmar(nota.trim() || null);
         }}
       >
-        <p className="text-xs font-semibold uppercase tracking-wider text-apagado">Pausando</p>
+        <p className="text-xs font-semibold uppercase tracking-wider text-apagado">Parando o timer</p>
         <p className="mt-1 truncate font-titulo text-xl font-medium">{titulo}</p>
         <label htmlFor="nota-pausa" className="mt-4 block text-sm text-suave">
           Onde você parou? Opcional, mas ajuda a voltar depois.
@@ -40,7 +40,7 @@ export default function PedidoNota({ titulo, aoConfirmar, aoCancelar }: Props) {
           placeholder="ex.: falta validar o filtro de datas"
           className="mt-2 w-full rounded-lg border border-linha bg-cartao px-3 py-2 text-[15px] outline-none focus:border-destaque"
         />
-        <p className="mt-3 text-xs text-apagado">Enter pausa, Esc cancela.</p>
+        <p className="mt-3 text-xs text-apagado">Enter para o timer (a tarefa continua aberta), Esc cancela.</p>
       </form>
     </div>
   );

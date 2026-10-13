@@ -7,7 +7,8 @@ export type IdPronta =
   | "inbox_acumulando"
   | "ritual_pendente"
   | "foco_esquecido"
-  | "fim_do_dia";
+  | "fim_do_dia"
+  | "retorno_aguardando";
 
 /** Condição de regra personalizada: todos os campos preenchidos precisam valer. */
 export interface CondicaoPersonalizada {
@@ -138,7 +139,7 @@ const PRONTAS: Record<IdPronta, Avaliador> = {
         itemId: null,
         chave: `ritual_pendente:${dataLocalIso(agora)}`,
         titulo: "Dia ainda não planejado",
-        corpo: "Abra Meu dia e escolha as 3 de hoje. Leva uns 5 minutos.",
+        corpo: "Abra Meu dia e escolha o que fazer hoje. Leva uns 5 minutos.",
       },
     ];
   },
@@ -173,7 +174,25 @@ const PRONTAS: Record<IdPronta, Avaliador> = {
             .join(", ")}${urgentes.length > 3 ? ` e mais ${urgentes.length - 3}` : ""}.`;
     return [{ itemId: null, chave: `fim_do_dia:${dataLocalIso(agora)}`, titulo: "Fim do dia", corpo: `${feito} ${fica}` }];
   },
+
+  // O item já voltou de Aguardando para A fazer (ou ainda está lá): avisa uma vez no dia do retorno.
+  retorno_aguardando: (_regra, { agora, itens }) => {
+    const hoje = dataLocalIso(agora);
+    return itens
+      .filter((i) => i.aguardando_ate && i.aguardando_ate <= hoje && i.status !== "em_foco")
+      .map((i) => ({
+        itemId: i.id,
+        chave: `retorno_aguardando:${i.id}:${i.aguardando_ate}`,
+        titulo: "Cobrar retorno",
+        corpo: `${i.titulo}: ${i.aguardando_quem ? `você está esperando ${i.aguardando_quem}` : "você estava esperando um retorno"} desde ${dataCurta(i.atualizado_em)}.`,
+      }));
+  },
 };
+
+function dataCurta(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
 
 /** O item atende a todas as condições preenchidas? Sem nenhuma condição, não atende. */
 export function atendeCondicao(item: Item, c: CondicaoPersonalizada, agora: Date): boolean {

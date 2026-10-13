@@ -1,10 +1,9 @@
 import { getDb } from ".";
 import { dataLocalIso } from "../captura/datas";
 import { gravarConfig, lerConfig } from "./config";
-import { alterarItem, gravarCampos, SELECT_ITEM, type Item } from "./itens";
+import { diaUtilAnterior, type DadosDaily } from "../dia/daily";
+import { alterarItem, concluidosEntre, gravarCampos, listarItens, SELECT_ITEM, type Item } from "./itens";
 
-/** Quantos itens cabem em Hoje (as 3 do dia). */
-export const MAX_DO_DIA = 3;
 /** Hora a partir da qual o app lembra que o dia não foi planejado. */
 export const HORA_LEMBRETE_RITUAL = 10;
 
@@ -105,4 +104,12 @@ export async function deveLembrarRitual(agora = new Date()): Promise<boolean> {
   if ((await lerConfig(CHAVE_FEITO)) === dia || (await lerConfig(CHAVE_LEMBRADO)) === dia) return false;
   await gravarConfig(CHAVE_LEMBRADO, dia);
   return true;
+}
+
+/** O que a daily precisa: concluídos no dia útil anterior, os abertos e os aguardando. */
+export async function dadosDaDaily(hoje = new Date()): Promise<DadosDaily> {
+  const anterior = diaUtilAnterior(hoje);
+  const fim = new Date(anterior.getFullYear(), anterior.getMonth(), anterior.getDate() + 1);
+  const [ontem, abertos, aguardando] = await Promise.all([concluidosEntre(anterior, fim), itensDoQuadro(), listarItens("aguardando")]);
+  return { ontem, abertos, aguardando };
 }

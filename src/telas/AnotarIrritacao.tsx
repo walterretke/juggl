@@ -12,11 +12,11 @@ export default function AnotarIrritacao({ tela, aoSalvar, aoCancelar }: Props) {
   const [texto, setTexto] = useState("");
   return (
     <div
-      className="fixed inset-0 z-10 flex items-start justify-center bg-black/30 pt-24"
+      className="fixed inset-0 z-10 flex items-start justify-center overflow-y-auto bg-black/30 p-4 sm:pt-24"
       onMouseDown={(e) => e.target === e.currentTarget && aoCancelar()}
     >
       <form
-        className="w-[min(520px,90vw)] rounded-2xl bg-folha p-6 text-tinta shadow-2xl ring-1 ring-linha"
+        className="w-[min(520px,100%)] rounded-2xl bg-folha p-6 text-tinta shadow-2xl ring-1 ring-linha"
         onSubmit={(e) => {
           e.preventDefault();
           if (texto.trim()) aoSalvar(texto.trim());

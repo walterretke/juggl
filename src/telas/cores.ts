@@ -28,3 +28,13 @@ export const NOME_COR: Record<CorPrioridade, string> = {
   roxo: "Roxo",
   cinza: "Cinza",
 };
+
+/** Faixa colorida na borda esquerda do cartão, para reconhecer a prioridade de longe. */
+export const FAIXA_PRIORIDADE: Record<CorPrioridade, string> = {
+  vermelho: "border-l-red-500",
+  ambar: "border-l-amber-500",
+  azul: "border-l-blue-500",
+  verde: "border-l-emerald-500",
+  roxo: "border-l-violet-500",
+  cinza: "border-l-stone-400",
+};
