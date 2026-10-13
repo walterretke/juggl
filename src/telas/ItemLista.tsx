@@ -26,6 +26,10 @@ export interface AcoesItem {
   aguardar: (quem: string | null, ate: string | null) => void;
   /** Copia uma linha com o status, pronta para responder no Teams. */
   copiarStatus: () => void;
+  /** Abre a tarefa no editor (A ou dois cliques na linha). */
+  abrir: () => void;
+  /** Apaga de vez; dá para desfazer com Z. */
+  apagar: () => void;
   abrirMenu: (menu: Menu | null) => void;
 }
 
@@ -122,6 +126,7 @@ export default function ItemLista({ item, indice, ativo, lista, agora, prioridad
         acoes.selecionar();
       }}
       onClick={acoes.selecionar}
+      onDoubleClick={acoes.abrir}
       className={`group relative cursor-default rounded-xl px-[18px] py-3.5 ${
         ativo ? "bg-cartao shadow-[0_0_0_1.5px_var(--color-destaque),0_4px_14px_rgba(0,0,0,0.08)]" : "hover:bg-cartao/60"
       }`}
@@ -228,9 +233,9 @@ export default function ItemLista({ item, indice, ativo, lista, agora, prioridad
                 e.stopPropagation();
                 acoes.editar("nota");
               }}
-              className="mt-1 block w-full truncate rounded text-left text-[13px] text-apagado hover:text-tinta-2"
+              className="mt-1 line-clamp-3 w-full rounded text-left text-[13px] leading-5 whitespace-pre-line text-apagado hover:text-tinta-2"
             >
-              {item.nota.replace(/\s+/g, " ")}
+              {item.nota}
             </button>
           )}
         </div>
@@ -261,7 +266,9 @@ export default function ItemLista({ item, indice, ativo, lista, agora, prioridad
           <Acao icone="cobrar" titulo="Cobrou de novo (B)" aoClicar={acoes.cobrar} />
           {item.link && <Acao icone="link" titulo="Abrir o link (O)" aoClicar={acoes.abrirLink} />}
           <Acao icone="copiar" titulo="Copiar o status para responder (Ctrl+C)" aoClicar={acoes.copiarStatus} />
+          <Acao icone="lapis" titulo="Abrir a tarefa (A)" aoClicar={acoes.abrir} />
           <Acao icone="arquivar" titulo="Arquivar (E)" aoClicar={acoes.arquivar} />
+          <Acao icone="lixeira" titulo="Apagar (Delete)" aoClicar={acoes.apagar} />
         </div>
 
         <div className="w-16 shrink-0 text-right">

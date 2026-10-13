@@ -40,7 +40,7 @@ export default function CampoAtalho({ atalho, aoMudarAtalho, aoGravar }: Props) 
       <div className="mt-2 flex gap-2">
         <input
           readOnly
-          aria-label="Atalho da captura"
+          aria-label="Atalho da nova tarefa"
           value={gravando ? (novoAtalho ? rotuloAtalho(novoAtalho) : "Aperte as teclas…") : rotuloAtalho(novoAtalho ?? atalho)}
           onFocus={() => {
             setGravando(true);

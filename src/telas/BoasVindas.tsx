@@ -17,7 +17,7 @@ interface Props {
   aoFechar: () => void;
 }
 
-const ETAPAS = ["Boas-vindas", "Captura", "Meu dia", "Avisos", "Azure DevOps", "Pronto"] as const;
+const ETAPAS = ["Boas-vindas", "Nova tarefa", "Meu dia", "Avisos", "Azure DevOps", "Pronto"] as const;
 
 const MARCACOES: { marca: string; exemplo: string; quer: string }[] = [
   { marca: "@", exemplo: "@Carla", quer: "quem pediu" },
@@ -27,14 +27,14 @@ const MARCACOES: { marca: string; exemplo: string; quer: string }[] = [
 ];
 
 const FLUXO_DIA: { titulo: string; texto: string }[] = [
-  { titulo: "Triar o que chegou", texto: "Os pedidos capturados esperam na caixa de entrada até você decidir o que fazer." },
+  { titulo: "Triar o que chegou", texto: "As tarefas novas esperam na caixa de entrada até você decidir o que fazer." },
   { titulo: "Planejar o dia", texto: "Arraste para Hoje o que entra no dia. Na primeira abertura do dia o Juggl começa aqui." },
   { titulo: "Focar", texto: "Uma coisa por vez. O tempo conta sozinho e pausa quando você sai do computador." },
   { titulo: "Fechar o dia", texto: "No fim do dia, decida o que volta amanhã. O resumo da daily sai pronto para copiar." },
 ];
 
 const ATALHOS: [string, string][] = [
-  ["C", "nova captura"],
+  ["C", "nova tarefa"],
   ["Ctrl+K", "buscar itens e comandos"],
   ["F", "pôr o item em foco"],
   ["W", "esperar alguém (Aguardando)"],
@@ -123,7 +123,7 @@ export default function BoasVindas({ atalho, aoMudarAtalho, aoSincronizarDevops,
         hoje e lembra quem está esperando por você.
       </p>
       <ul className="mt-6 flex flex-col gap-4">
-        <Destaque icone="lapis" titulo="Capture sem parar o que está fazendo">
+        <Destaque icone="lapis" titulo="Anote sem parar o que está fazendo">
           Um atalho de qualquer janela, uma linha de texto, Enter. O pedido do Teams não fica para trás.
         </Destaque>
         <Destaque icone="sol" titulo="Um plano por dia">
@@ -139,7 +139,7 @@ export default function BoasVindas({ atalho, aoMudarAtalho, aoSincronizarDevops,
     </>,
 
     <>
-      <p className="text-xs font-semibold uppercase tracking-wider text-apagado">Captura</p>
+      <p className="text-xs font-semibold uppercase tracking-wider text-apagado">Nova tarefa</p>
       <h2 className="mt-1 font-titulo text-[26px] font-medium leading-tight tracking-tight">Um atalho, de qualquer janela</h2>
       <p className="mt-2 text-[15px] text-tinta-2">
         Aperte <b>{rotuloAtalho(atalho)}</b> no Teams, no navegador ou onde estiver. Abre uma caixinha: escreva o pedido,
@@ -186,7 +186,7 @@ export default function BoasVindas({ atalho, aoMudarAtalho, aoSincronizarDevops,
         onClick={() => invoke("abrir_captura")}
         className="mt-5 rounded-lg border border-linha px-3.5 py-2 text-sm hover:bg-etiqueta"
       >
-        Testar a captura agora
+        Testar a nova tarefa agora
       </button>
     </>,
 
@@ -260,7 +260,7 @@ export default function BoasVindas({ atalho, aoMudarAtalho, aoSincronizarDevops,
       <p className="text-xs font-semibold uppercase tracking-wider text-apagado">Pronto</p>
       <h2 className="mt-1 font-titulo text-[26px] font-medium leading-tight tracking-tight">Tudo certo para começar</h2>
       <p className="mt-2 text-[15px] text-tinta-2">
-        Comece capturando o próximo pedido que chegar com <b>{rotuloAtalho(atalho)}</b>. O resto se ajeita no Meu dia.
+        Comece anotando a próxima tarefa que chegar com <b>{rotuloAtalho(atalho)}</b>. O resto se ajeita no Meu dia.
       </p>
 
       <h3 className="mt-6 text-[15px] font-semibold">Aparência</h3>

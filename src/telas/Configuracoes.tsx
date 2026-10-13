@@ -121,7 +121,7 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevo
           ))}
         </div>
 
-        <h3 className="mt-7 text-[15px] font-semibold">Atalho da captura</h3>
+        <h3 className="mt-7 text-[15px] font-semibold">Atalho da nova tarefa</h3>
         <p className="mt-1 text-sm text-suave">
           Atual: <strong>{rotuloAtalho(atalho)}</strong>. Clique no campo e aperte a combinação nova.
         </p>

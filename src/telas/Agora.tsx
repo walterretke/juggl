@@ -93,12 +93,12 @@ export default function Agora({
                 if (e.key === "Escape") {
                   e.preventDefault();
                   setNota(null);
-                } else if (e.key === "Enter" && !e.shiftKey) {
+                } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                   e.preventDefault();
                   salvarNota();
                 }
               }}
-              placeholder="Detalhes, a mensagem recebida, links... (Enter salva, Shift+Enter quebra a linha)"
+              placeholder="Detalhes, a mensagem recebida, links... (Enter quebra a linha, Ctrl+Enter salva)"
               className="mt-3 w-full resize-y rounded-lg border border-destaque bg-folha px-3 py-2 text-[15px] leading-relaxed outline-none"
             />
           ) : foco.item.nota ? (
@@ -125,16 +125,18 @@ export default function Agora({
             <button
               type="button"
               onClick={aoPausar}
-              className="rounded-lg border border-linha px-4 py-2 text-sm font-semibold hover:bg-etiqueta"
+              title="Para o timer. A tarefa continua aberta."
+              className="rounded-lg bg-destaque px-4 py-2 text-sm font-semibold text-folha hover:opacity-90"
             >
-              Pausar <kbd className="ml-1 font-sans font-normal text-apagado">P</kbd>
+              Parar timer <kbd className="ml-1 font-sans font-normal opacity-70">P</kbd>
             </button>
             <button
               type="button"
               onClick={aoConcluir}
-              className="rounded-lg bg-destaque px-4 py-2 text-sm font-semibold text-folha hover:opacity-90"
+              title="Para o timer e fecha a tarefa (Z desfaz)"
+              className="rounded-lg border border-linha px-4 py-2 text-sm font-semibold hover:bg-etiqueta"
             >
-              Concluir <kbd className="ml-1 font-sans font-normal opacity-70">X</kbd>
+              Concluir tarefa <kbd className="ml-1 font-sans font-normal text-apagado">X</kbd>
             </button>
             <button
               type="button"

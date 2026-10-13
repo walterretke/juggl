@@ -13,9 +13,9 @@ npm install
 npm run tauri dev
 ```
 
-## Captura rápida
+## Nova tarefa
 
-`Ctrl+Shift+Espaço` abre a captura sobre qualquer janela. Enter salva na caixa de entrada, Esc cancela.
+`Ctrl+Shift+Espaço` abre a janela de nova tarefa sobre qualquer janela. Enter (de qualquer lugar da janela) ou o botão Salvar grava na caixa de entrada, Esc cancela.
 
 Toda atividade tem título e descrição. Se houver texto selecionado na janela em uso, ele vira a descrição (com as quebras de linha) e o título já vem preenchido como "Atividade 1", "Atividade 2"... e selecionado, para trocar digitando por cima. Título vazio com descrição também vira "Atividade N"; o número só avança quando esse nome é usado. Para pegar a seleção o Juggl simula o comando de copiar (Ctrl+Insert no Windows e no Linux, Cmd+C no macOS) e depois devolve a área de transferência como estava. Dá para desligar nas configurações. Limitações: no macOS o Juggl precisa da permissão de Acessibilidade; no Linux com Wayland não funciona; se a área de transferência tinha uma imagem, ela é trocada pelo texto copiado.
 
@@ -36,7 +36,9 @@ Um link do Teams, Jira, ServiceNow ou Azure DevOps na área de transferência é
 
 ## Triagem
 
-A janela principal tem a tela **Agora** (o item em foco) e três listas: **Caixa de entrada** (o que foi capturado), **A fazer** (o que já foi triado, ordenado por prazo e prioridade) e **Aguardando** (o que depende da resposta de alguém).
+A janela principal tem a tela **Agora** (o item em foco) e as listas: **Caixa de entrada** (as tarefas novas), **A fazer** (o que já foi triado, ordenado por prazo e prioridade), **Aguardando** (o que depende da resposta de alguém) e **Fechadas** (concluídas e arquivadas, com busca e "Restaurar", que devolve cada tarefa para a lista em que estava).
+
+Clicar num cartão do Meu dia, `A` ou dois cliques numa linha abrem a tarefa para editar tudo de uma vez (título, descrição, quem pediu, projeto, prioridade e prazo), com Focar, Concluir, Arquivar e Apagar. Na descrição, Enter quebra a linha e `Ctrl+Enter` salva; as quebras de linha aparecem na lista. Apagar tira a tarefa de vez (`Z` desfaz); as horas já trabalhadas nela continuam nas Horas da semana.
 
 Com o mouse: o círculo conclui; passar o mouse mostra os botões de mover, focar, prioridade, prazo, link e arquivar; clicar no prazo ou na prioridade abre a escolha (com calendário); clicar em quem pediu ou no projeto edita; dois cliques no título renomeiam. Arraste um item para **Agora** (põe em foco), **A fazer** ou **Caixa de entrada** na barra lateral. O aviso de cada ação tem o botão Desfazer.
 
@@ -50,19 +52,21 @@ Pelo teclado:
 | `1` a `9`, `0` | prioridade na ordem das configurações, sem prioridade |
 | `#` / `@` | projeto / quem pediu |
 | `R` | renomear |
+| `A` | abrir a tarefa para editar |
 | `X` / `E` | concluir / arquivar |
+| `Delete` | apagar (`Z` desfaz) |
 | `Z` | desfazer |
 | `O` | abrir o link |
 | `W` | aguardando alguém (quem e quando cobrar) |
 | `Ctrl+C` | copiar o status do item, pronto para responder no Teams |
 | `F` | pôr o item em foco |
 | `Tab` | trocar de tela |
-| `C` | capturar |
+| `C` | nova tarefa |
 
 ## Busca
 
 - `Ctrl+K` (ou `/`, ou "Buscar" na barra lateral) busca qualquer pedido pelo título, descrição, quem pediu, projeto ou número do chamado, sem ligar para acentos. Concluídos e arquivados também aparecem.
-- Enter abre o item na lista dele. Um concluído ou arquivado volta para A fazer (`Z` desfaz). `Ctrl+C` copia o status.
+- Enter abre o item na lista dele. Um concluído ou arquivado volta para a lista em que estava (`Z` desfaz). `Ctrl+C` copia o status.
 - Sem nada digitado, a mesma janela lista os comandos: ir para uma tela, capturar, copiar a daily, abrir a mini-janela.
 
 ## Aguardando alguém
@@ -73,12 +77,12 @@ Pelo teclado:
 
 ## Foco e timer
 
-- A descrição aparece embaixo do título nas listas; clique nela, no ícone de linhas ou aperte `D` para editar (no Agora também). Enter salva, Shift+Enter quebra a linha.
+- A descrição aparece embaixo do título nas listas; clique nela, no ícone de linhas ou aperte `D` para editar (no Agora também). Enter quebra a linha, `Ctrl+Enter` salva.
 - `F` em qualquer item põe ele em foco e abre a tela **Agora**, com o timer correndo. Só um item fica em foco por vez.
-- Na tela Agora: `P` pausa (pergunta onde você parou), `X` conclui e `1` `2` `3` focam uma das próximas de A fazer.
+- Na tela Agora: `P` para o timer (pergunta onde você parou; a tarefa continua aberta), `X` conclui a tarefa (`Z` desfaz) e `1` `2` `3` focam uma das próximas de A fazer.
 - Trocar de foco pausa o item anterior com a nota de onde parou. Itens pausados voltam para A fazer mostrando essa nota.
 - O tempo fica gravado nos eventos `foco_inicio` e `foco_fim`. Se o app for fechado ou o computador dormir no meio do foco, a sessão é encerrada no último minuto em que o app estava rodando.
-- A bandeja mostra o item em foco e há quanto tempo, com a opção Pausar.
+- A bandeja mostra o item em foco e há quanto tempo, com a opção Parar timer.
 - A barra lateral mostra o item em foco com o timer e o botão de pausar; clicar abre a tela Agora, e soltar um item ali põe ele em foco.
 - **Mini-janela**: o botão ao lado do timer (ou "Mini-janela" no Agora) abre uma faixa sempre por cima das outras janelas, com o foco, o timer e Pausar. Arraste pela faixa para mudar de lugar.
 - Sem teclado nem mouse por 10 minutos (ajustável em Configurações, 0 desliga), o foco pausa sozinho e o tempo parado não conta. No Linux isso funciona no X11; no Wayland a pausa automática fica desligada.
@@ -146,7 +150,7 @@ Pelo teclado:
 
 ## Bandeja, configurações e backup
 
-- Fechar a janela deixa o Juggl na bandeja do sistema, com o atalho ativo. O ícone tem o foco atual, Pausar, Capturar, Abrir o Juggl e Sair.
+- Fechar a janela deixa o Juggl na bandeja do sistema, com o atalho ativo. O ícone tem o foco atual, Parar timer, Nova tarefa, Abrir o Juggl e Sair.
 - Abrir o Juggl de novo só traz a janela existente. `juggl --captura` abre direto a captura (útil no Linux com Wayland: ligue esse comando a um atalho do sistema).
 - `,` abre as configurações: tema (igual ao sistema, claro ou escuro), atalho da captura, uso do texto selecionado, minutos até a pausa por inatividade, prioridades (renomear, cor, ordem, criar e remover) e backup na hora.
 - Todo dia uma cópia do banco vai para a subpasta `backups/`, guardando as 7 mais recentes.

@@ -242,7 +242,7 @@ export default function Pessoas({ versao, aoCobrar, aoFocar, aoMudarPessoa, aoAr
   if (pessoas.length === 0) {
     return (
       <p className="mt-16 text-center text-[15px] text-apagado">
-        Ninguém ainda. Quem pediu entra aqui quando você preenche "quem pediu" numa captura.
+        Ninguém ainda. Quem pediu entra aqui quando você preenche "quem pediu" numa tarefa.
       </p>
     );
   }

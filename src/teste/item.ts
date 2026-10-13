@@ -29,6 +29,7 @@ export function item(id: string, extra: Partial<Item> = {}): Item {
     tempo_ms: 0,
     cobrancas: 0,
     ultima_cobranca: null,
+    status_anterior: null,
     ...extra,
   };
 }

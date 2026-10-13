@@ -21,7 +21,7 @@ export default function PedidoNota({ titulo, aoConfirmar, aoCancelar }: Props) {
           aoConfirmar(nota.trim() || null);
         }}
       >
-        <p className="text-xs font-semibold uppercase tracking-wider text-apagado">Pausando</p>
+        <p className="text-xs font-semibold uppercase tracking-wider text-apagado">Parando o timer</p>
         <p className="mt-1 truncate font-titulo text-xl font-medium">{titulo}</p>
         <label htmlFor="nota-pausa" className="mt-4 block text-sm text-suave">
           Onde você parou? Opcional, mas ajuda a voltar depois.
@@ -40,7 +40,7 @@ export default function PedidoNota({ titulo, aoConfirmar, aoCancelar }: Props) {
           placeholder="ex.: falta validar o filtro de datas"
           className="mt-2 w-full rounded-lg border border-linha bg-cartao px-3 py-2 text-[15px] outline-none focus:border-destaque"
         />
-        <p className="mt-3 text-xs text-apagado">Enter pausa, Esc cancela.</p>
+        <p className="mt-3 text-xs text-apagado">Enter para o timer (a tarefa continua aberta), Esc cancela.</p>
       </form>
     </div>
   );

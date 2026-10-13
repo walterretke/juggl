@@ -32,6 +32,10 @@ interface Props {
   tituloSugerido: string;
   descricao: string;
   aoMudarDescricao: (descricao: string) => void;
+  /** Ajuda da descrição (no editor, Enter quebra a linha). */
+  dicaDescricao?: string;
+  /** Pergunta do título ("O que chegou?" na nova tarefa). */
+  rotuloTitulo?: string;
 }
 
 function amanha(): string {
@@ -106,6 +110,8 @@ export default function Formulario({
   tituloSugerido,
   descricao,
   aoMudarDescricao,
+  dicaDescricao,
+  rotuloTitulo = "O que chegou?",
 }: Props) {
   const [calendario, setCalendario] = useState(false);
   const grupoPrazo = useRef<HTMLDivElement>(null);
@@ -122,7 +128,7 @@ export default function Formulario({
     <div className="flex flex-col gap-3.5">
       <div>
         <label htmlFor="captura-titulo" className="block text-xs font-semibold uppercase tracking-wider text-apagado">
-          O que chegou?
+          {rotuloTitulo}
         </label>
         <input
           id="captura-titulo"
@@ -136,7 +142,7 @@ export default function Formulario({
         />
       </div>
 
-      <CampoDescricao valor={descricao} aoMudar={aoMudarDescricao} />
+      <CampoDescricao valor={descricao} aoMudar={aoMudarDescricao} dica={dicaDescricao} maxLinhas={dicaDescricao ? 12 : undefined} />
 
       <div className="flex gap-3">
         <Autocompletar

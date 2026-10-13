@@ -45,6 +45,8 @@ export interface Item {
   /** Quantas vezes quem pediu cobrou de novo (eventos `cobrado`). */
   cobrancas: number;
   ultima_cobranca: string | null;
+  /** Onde estava antes de ser concluído ou arquivado, para restaurar no lugar certo. */
+  status_anterior: Status | null;
 }
 
 /** Campos que a triagem pode mudar. */
@@ -71,6 +73,21 @@ export interface Alteracao {
   itemId: string;
   anterior: Mudancas;
   eventos: string[];
+  /** Tarefa apagada: as linhas guardadas para o desfazer trazer de volta. */
+  copia?: CopiaApagada;
+}
+
+type Linha = Record<string, unknown>;
+
+/** O que `apagarItem` tirou do banco (e o que criou), para desfazer. */
+export interface CopiaApagada {
+  item: Linha;
+  eventos: Linha[];
+  notificacoes: Linha[];
+  /** Lançamentos à mão que estavam ligados à tarefa e ficaram soltos. */
+  manuaisSoltos: { id: string; descricao: unknown }[];
+  /** Sessões de foco que viraram lançamentos à mão para as horas não sumirem. */
+  manuaisCriados: string[];
 }
 
 /** Id do nome igual a `nome`, ignorando maiúsculas, acentos, espaços e _ ("@carla_dias" acha "Carla Dias"). */
@@ -173,7 +190,8 @@ export const SELECT_ITEM = `
            + COALESCE((SELECT CAST(SUM((julianday(s.fim) - julianday(s.inicio)) * 86400000) AS INTEGER)
                          FROM sessao_manual s WHERE s.item_id = item.id), 0) AS tempo_ms,
          (SELECT COUNT(*) FROM evento e WHERE e.item_id = item.id AND e.tipo = 'cobrado') AS cobrancas,
-         (SELECT MAX(e.timestamp) FROM evento e WHERE e.item_id = item.id AND e.tipo = 'cobrado') AS ultima_cobranca
+         (SELECT MAX(e.timestamp) FROM evento e WHERE e.item_id = item.id AND e.tipo = 'cobrado') AS ultima_cobranca,
+         item.status_anterior
     FROM item
     LEFT JOIN pessoa ON pessoa.id = item.pessoa_id
     LEFT JOIN projeto ON projeto.id = item.projeto_id
@@ -218,8 +236,14 @@ export async function gravarCampos(id: string, campos: Mudancas): Promise<void> 
   // Planejar (escolher para hoje, trocar o "quando") não conta como mexer no item:
   // `atualizado_em` (o "parado há" da urgência) fica igual.
   const soPlano = nomes.every((c) => c === "dia_planejado" || c === "quando");
+  // Ao concluir ou arquivar, guarda onde a tarefa estava (no SET, `status` ainda é o valor antigo).
+  const anterior =
+    "status" in campos
+      ? `, status_anterior = CASE WHEN $${nomes.indexOf("status") + 1} IN ('feito', 'arquivado') AND status NOT IN ('feito', 'arquivado')
+                                  THEN status ELSE status_anterior END`
+      : "";
   await db.execute(
-    `UPDATE item SET ${sets}, atualizado_em = ${soPlano ? "atualizado_em" : `$${nomes.length + 1}`} WHERE id = $${nomes.length + 2}`,
+    `UPDATE item SET ${sets}${anterior}, atualizado_em = ${soPlano ? "atualizado_em" : `$${nomes.length + 1}`} WHERE id = $${nomes.length + 2}`,
     [...nomes.map((c) => campos[c] ?? null), agoraIso(), id],
   );
 }
@@ -270,9 +294,78 @@ export async function registrarCobranca(item: Item): Promise<Alteracao> {
 }
 
 export async function desfazerAlteracao(alteracao: Alteracao): Promise<void> {
+  if (alteracao.copia) return restaurarApagado(alteracao.copia);
   await gravarCampos(alteracao.itemId, alteracao.anterior);
   const db = await getDb();
   for (const id of alteracao.eventos) await db.execute("DELETE FROM evento WHERE id = $1", [id]);
+}
+
+async function inserirLinha(tabela: string, linha: Linha): Promise<void> {
+  const db = await getDb();
+  const colunas = Object.keys(linha);
+  await db.execute(
+    `INSERT INTO ${tabela} (${colunas.join(", ")}) VALUES (${colunas.map((_, i) => `$${i + 1}`).join(", ")})`,
+    colunas.map((c) => linha[c]),
+  );
+}
+
+/**
+ * Apaga a tarefa de vez, com o histórico dela. As horas já trabalhadas continuam nas Horas
+ * da semana: cada sessão de foco vira um lançamento à mão com o título e o projeto da tarefa.
+ * Devolve o necessário para desfazer (Z).
+ */
+export async function apagarItem(item: Item): Promise<Alteracao> {
+  if (item.status === "em_foco") throw new Error("Pause ou conclua a tarefa em foco antes de apagar.");
+  const db = await getDb();
+  const [linha] = await db.select<Linha[]>("SELECT * FROM item WHERE id = $1", [item.id]);
+  if (!linha) throw new Error("Essa tarefa não existe mais.");
+  const eventos = await db.select<Linha[]>("SELECT * FROM evento WHERE item_id = $1", [item.id]);
+  const notificacoes = await db.select<Linha[]>("SELECT * FROM notificacao WHERE item_id = $1", [item.id]);
+  const manuaisSoltos = await db.select<{ id: string; descricao: unknown }[]>(
+    "SELECT id, descricao FROM sessao_manual WHERE item_id = $1",
+    [item.id],
+  );
+
+  const manuaisCriados: string[] = [];
+  const agora = agoraIso();
+  for (const e of eventos) {
+    if (e.tipo !== "foco_fim") continue;
+    const inicio = (JSON.parse(String(e.dados ?? "{}")) as { inicio?: string }).inicio;
+    if (!inicio) continue;
+    const id = novoId();
+    await db.execute(
+      `INSERT INTO sessao_manual (id, item_id, projeto_id, descricao, inicio, fim, criado_em) VALUES ($1, NULL, $2, $3, $4, $5, $6)`,
+      [id, item.projeto_id, item.titulo, inicio, e.timestamp, agora],
+    );
+    manuaisCriados.push(id);
+  }
+  await db.execute("UPDATE sessao_manual SET item_id = NULL, descricao = COALESCE(descricao, $1) WHERE item_id = $2", [
+    item.titulo,
+    item.id,
+  ]);
+  await db.execute("DELETE FROM notificacao WHERE item_id = $1", [item.id]);
+  await db.execute("DELETE FROM evento WHERE item_id = $1", [item.id]);
+  await db.execute("DELETE FROM item WHERE id = $1", [item.id]);
+  return { itemId: item.id, anterior: {}, eventos: [], copia: { item: linha, eventos, notificacoes, manuaisSoltos, manuaisCriados } };
+}
+
+async function restaurarApagado(copia: CopiaApagada): Promise<void> {
+  const db = await getDb();
+  await inserirLinha("item", copia.item);
+  for (const e of copia.eventos) await inserirLinha("evento", e);
+  for (const n of copia.notificacoes) await inserirLinha("notificacao", n);
+  for (const s of copia.manuaisSoltos)
+    await db.execute("UPDATE sessao_manual SET item_id = $1, descricao = $2 WHERE id = $3", [copia.item.id, s.descricao, s.id]);
+  for (const id of copia.manuaisCriados) await db.execute("DELETE FROM sessao_manual WHERE id = $1", [id]);
+}
+
+/** Concluídas e arquivadas, as mexidas por último primeiro. */
+export async function listarFechados(limite = 500): Promise<Item[]> {
+  const db = await getDb();
+  return db.select<Item[]>(
+    `${SELECT_ITEM} WHERE item.status IN ('feito', 'arquivado') ORDER BY item.atualizado_em DESC LIMIT $1`,
+    [limite],
+  );
 }
 
 /** Apelidos e nomes já usados, para o autocompletar de @ e # na captura. */

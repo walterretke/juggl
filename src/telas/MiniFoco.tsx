@@ -53,7 +53,7 @@ export default function MiniFoco() {
           <span className="shrink-0 font-titulo text-lg font-medium tabular-nums tracking-tight">
             {formatarCronometro(agora - new Date(foco.inicio).getTime())}
           </span>
-          <button type="button" title="Pausar" aria-label="Pausar" onClick={() => emit("bandeja:pausar")} className={botao}>
+          <button type="button" title="Parar o timer" aria-label="Parar o timer" onClick={() => emit("bandeja:pausar")} className={botao}>
             <Icone nome="pausa" />
           </button>
         </>

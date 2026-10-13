@@ -93,6 +93,12 @@ fn migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/0006_refinamento.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 7,
+            description: "tarefas",
+            sql: include_str!("../migrations/0007_tarefas.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
@@ -351,9 +357,9 @@ fn atualizar_bandeja(app: AppHandle, menu: State<MenuFoco>, foco: Option<String>
 
 fn criar_bandeja(app: &tauri::App) -> tauri::Result<()> {
     let foco = MenuItem::with_id(app, "foco", SEM_FOCO, false, None::<&str>)?;
-    let pausar = MenuItem::with_id(app, "pausar", "Pausar", false, None::<&str>)?;
+    let pausar = MenuItem::with_id(app, "pausar", "Parar timer", false, None::<&str>)?;
     let separador = PredefinedMenuItem::separator(app)?;
-    let capturar = MenuItem::with_id(app, "capturar", "Capturar", true, None::<&str>)?;
+    let capturar = MenuItem::with_id(app, "capturar", "Nova tarefa", true, None::<&str>)?;
     let abrir = MenuItem::with_id(app, "abrir", "Abrir o Juggl", true, None::<&str>)?;
     let sair = MenuItem::with_id(app, "sair", "Sair", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&foco, &pausar, &separador, &capturar, &abrir, &sair])?;

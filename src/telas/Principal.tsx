@@ -19,6 +19,7 @@ import {
 } from "../db/foco";
 import {
   alterarItem,
+  apagarItem,
   buscarOuCriarPessoa,
   buscarOuCriarProjeto,
   contarPorLista,
@@ -63,21 +64,24 @@ import PedidoNota from "./PedidoNota";
 import Pessoas from "./Pessoas";
 import Regras from "./Regras";
 import MeuDia from "./MeuDia";
+import EditorTarefa from "./EditorTarefa";
+import Fechadas from "./Fechadas";
+import { destinoAoRestaurar, NOME_LISTA } from "../tarefas/restaurar";
 import { rotuloAtalho } from "./origens";
 
 const MINUTO_MS = 60 * 1000;
 const MAX_DESFAZER = 30;
 
 /** Telas da janela principal: Meu dia (o fluxo do dia), Agora (o foco), as listas, Pessoas e Horas. */
-type Tela = "dia" | "agora" | Lista | "pessoas" | "horas" | "regras" | "uso";
-const TELAS: Tela[] = ["dia", "agora", "inbox", "a_fazer", "aguardando", "pessoas", "horas", "regras", "uso"];
+type Tela = "dia" | "agora" | Lista | "fechadas" | "pessoas" | "horas" | "regras" | "uso";
+const TELAS: Tela[] = ["dia", "agora", "inbox", "a_fazer", "aguardando", "fechadas", "pessoas", "horas", "regras", "uso"];
 /**
  * Grupos da barra lateral; Regras e Uso ficam no rodapé, junto das configurações.
  * Agora não tem botão próprio: o cartão "Em foco", logo abaixo de Meu dia, leva até ele.
  */
 const GRUPOS_MENU: { titulo: string; telas: Tela[] }[] = [
   { titulo: "Hoje", telas: ["dia"] },
-  { titulo: "Listas", telas: ["inbox", "a_fazer", "aguardando"] },
+  { titulo: "Listas", telas: ["inbox", "a_fazer", "aguardando", "fechadas"] },
   { titulo: "Acompanhar", telas: ["pessoas", "horas"] },
 ];
 const NOME_TELA: Record<Tela, string> = {
@@ -86,6 +90,7 @@ const NOME_TELA: Record<Tela, string> = {
   inbox: "Caixa de entrada",
   a_fazer: "A fazer",
   aguardando: "Aguardando",
+  fechadas: "Fechadas",
   pessoas: "Pessoas",
   horas: "Horas da semana",
   regras: "Regras",
@@ -109,7 +114,7 @@ const ROTULO_CAMPO: Record<CampoEditavel, string> = {
   projeto: "Projeto (vazio tira)",
   pessoa: "Quem pediu (vazio tira)",
   titulo: "Título",
-  nota: "Descrição (Enter salva, Shift+Enter quebra a linha, vazio tira)",
+  nota: "Descrição (Enter quebra a linha, Ctrl+Enter salva, vazio tira)",
 };
 
 
@@ -177,6 +182,8 @@ export default function Principal() {
   const [instalando, setInstalando] = useState(false);
   const [anotando, setAnotando] = useState(false);
   const [buscando, setBuscando] = useState(false);
+  /** Tarefa aberta no editor (clique no cartão do Meu dia, A nas listas). */
+  const [editando, setEditando] = useState<Item | null>(null);
   /** Apresentação do primeiro uso (abre sozinha só na primeira vez). */
   const [boasVindas, setBoasVindas] = useState(false);
   /** Item a selecionar quando a lista carregar (vindo da busca global). */
@@ -519,7 +526,7 @@ export default function Principal() {
   useEffect(() => {
     if (!alerta) return;
     function aoTeclar(e: KeyboardEvent) {
-      if (pedidoNota || configAberta || boasVindas || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (pedidoNota || configAberta || boasVindas || editando || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select")) return;
       const resposta = ({ t: "trocar", c: "continuar", a: "adiar" } as const)[e.key.toLowerCase() as "t" | "c" | "a"];
       if (!resposta) return;
@@ -553,7 +560,7 @@ export default function Principal() {
       acao: async (nota) => {
         await encerrarFoco(atual, "pausa", nota);
         mostrarAviso(
-          atual.item.dia_planejado === dataLocalIso(new Date()) ? "Pausado. Ele volta para Hoje." : "Pausado. Ele volta para A fazer.",
+          atual.item.dia_planejado === dataLocalIso(new Date()) ? "Timer parado. A tarefa continua em Hoje." : "Timer parado. A tarefa continua em A fazer.",
         );
         await carregar();
       },
@@ -562,9 +569,30 @@ export default function Principal() {
 
   async function concluirFoco() {
     if (!foco) return;
-    await encerrarFoco(foco, "concluido");
-    mostrarAviso("Concluído.");
+    const evento = await encerrarFoco(foco, "concluido");
+    // Desfazer devolve a tarefa aberta (o timer já parou e as horas ficam contadas).
+    if (evento) desfazer.current = [...desfazer.current, { itemId: foco.item.id, anterior: { status: "a_fazer" as const }, eventos: [evento] }].slice(-MAX_DESFAZER);
+    mostrarAviso("Tarefa concluída.", true);
     await carregar();
+  }
+
+  /** Apaga a tarefa de vez; Z traz de volta. */
+  async function apagar(item: Item) {
+    try {
+      const alteracao = await apagarItem(item);
+      desfazer.current = [...desfazer.current, alteracao].slice(-MAX_DESFAZER);
+      setEditando((e) => (e?.id === item.id ? null : e));
+      mostrarAviso(`Tarefa apagada: ${item.titulo}`, true);
+      await carregar();
+    } catch (e) {
+      mostrarAviso(String(e).replace(/^Error: /, ""));
+    }
+  }
+
+  /** Concluída ou arquivada volta para a lista em que estava. */
+  function restaurar(item: Item) {
+    const destino = destinoAoRestaurar(item);
+    return aplicar(item, { status: destino }, `Restaurada em ${NOME_LISTA[destino]}`);
   }
 
   // "Pausar" no menu da bandeja: pausa direto, sem nota, porque a janela pode estar escondida.
@@ -615,13 +643,14 @@ export default function Principal() {
     if (!item) return;
     if (item.status === "em_foco") return trocarLista("agora");
     const fechado = item.status === "feito" || item.status === "arquivado";
+    const reaberto = destinoAoRestaurar(item);
     if (fechado) {
       // Sem `aplicar`: a recarga dela seria a da tela atual e chegaria depois da lista nova.
-      const alteracao = await alterarItem(item, { status: "a_fazer" });
+      const alteracao = await alterarItem(item, { status: reaberto });
       desfazer.current = [...desfazer.current, alteracao].slice(-MAX_DESFAZER);
-      mostrarAviso("Reaberto em A fazer", true);
+      mostrarAviso(`Reaberta em ${NOME_LISTA[reaberto]}`, true);
     }
-    const destino: Lista = fechado ? "a_fazer" : item.status === "inbox" ? "inbox" : item.status === "aguardando" ? "aguardando" : "a_fazer";
+    const destino: Lista = fechado ? reaberto : item.status === "inbox" ? "inbox" : item.status === "aguardando" ? "aguardando" : "a_fazer";
     selecionarId.current = item.id;
     if (lista === destino) await carregar();
     else setLista(destino);
@@ -629,7 +658,7 @@ export default function Principal() {
 
   const comandos: Comando[] = [
     ...TELAS.map((t) => ({ nome: `Ir para ${NOME_TELA[t]}`, acao: () => trocarLista(t) })),
-    { nome: "Nova captura", tecla: "C", acao: () => invoke("abrir_captura") },
+    { nome: "Nova tarefa", tecla: "C", acao: () => invoke("abrir_captura") },
     { nome: "Copiar o resumo da daily", acao: () => copiarDaily() },
     { nome: "Abrir a mini-janela de foco", acao: () => abrirMini() },
     ...(foco ? [{ nome: `Pausar ${foco.item.titulo}`, tecla: "P", acao: () => pausar() }] : []),
@@ -643,7 +672,7 @@ export default function Principal() {
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
       if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
-      if (configAberta || pedidoNota || anotando || buscando || boasVindas) return;
+      if (configAberta || pedidoNota || anotando || buscando || boasVindas || editando) return;
       const tecla = e.key.toLowerCase();
       if (tecla === "k") {
         e.preventDefault();
@@ -690,7 +719,7 @@ export default function Principal() {
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
       // # e @ podem vir com AltGr (Ctrl+Alt no Windows) em alguns teclados.
-      if (edicao || configAberta || pedidoNota || menu || anotando || buscando || boasVindas || ((e.ctrlKey || e.metaKey || e.altKey) && e.key !== "#" && e.key !== "@")) return;
+      if (edicao || configAberta || pedidoNota || menu || anotando || buscando || boasVindas || editando || ((e.ctrlKey || e.metaKey || e.altKey) && e.key !== "#" && e.key !== "@")) return;
       // Digitando num campo (busca, código do projeto): as letras são texto, não atalhos.
       if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select")) return;
       const item = itens?.[selecionado];
@@ -729,12 +758,14 @@ export default function Principal() {
       } else if (item) {
         Object.assign(acoes, {
           f: () => focar(item),
+          a: () => setEditando(item),
+          Delete: () => apagar(item),
           Enter: () =>
             lista === "inbox"
               ? aplicar(item, { status: "a_fazer" }, "Movido para A fazer")
               : lista === "aguardando" && aplicar(item, { status: "a_fazer" }, "Voltou para A fazer"),
           w: () => setMenu("aguardando"),
-          e: () => aplicar(item, { status: "arquivado" }, "Arquivado"),
+          e: () => aplicar(item, { status: "arquivado" }, "Arquivada. Fica em Fechadas."),
           x: () => aplicar(item, { status: "feito" }, "Concluído"),
           p: () => iniciarEdicao("prazo", item),
           "#": () => iniciarEdicao("projeto", item),
@@ -758,7 +789,7 @@ export default function Principal() {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [edicao, configAberta, pedidoNota, menu, anotando, buscando, boasVindas, itens, selecionado, lista, aplicar, foco, proximas, prioridades, atualizacao]);
+  }, [edicao, configAberta, pedidoNota, menu, anotando, buscando, boasVindas, editando, itens, selecionado, lista, aplicar, foco, proximas, prioridades, atualizacao]);
 
   // Mantém o item selecionado visível ao navegar pelo teclado.
   useEffect(() => {
@@ -776,13 +807,15 @@ export default function Principal() {
       ? "Poucos avisos e certeiros. Ligue, desligue e ajuste cada regra."
       : lista === "uso"
       ? "As 4 semanas de uso real: como está indo e o que irrita."
+      : lista === "fechadas"
+      ? "Tarefas concluídas e arquivadas. Restaurar devolve cada uma para a lista em que estava."
       : lista === "dia"
-      ? "O que chegou, as 3 de hoje, o que você está fazendo e o que já foi feito. Arraste os cartões entre as colunas."
+      ? "O que chegou, as 3 de hoje, o que você está fazendo e o que já foi feito. Clique num cartão para abrir, arraste para mudar de coluna."
       : lista === "pessoas"
       ? "Tudo que cada pessoa pediu, para responder quem está cobrando."
       : lista === "agora"
       ? foco
-        ? "Uma coisa por vez. Interrupções viram captura."
+        ? "Uma coisa por vez. Interrupções viram tarefa nova."
         : "Escolha o que fazer agora."
       : itens === null
       ? ""
@@ -829,7 +862,12 @@ export default function Principal() {
         );
       },
       copiarStatus: () => copiarStatus(item),
-      arquivar: () => aplicar(item, { status: "arquivado" }, "Arquivado"),
+      abrir: () => {
+        selecionar();
+        setEditando(item);
+      },
+      apagar: () => apagar(item),
+      arquivar: () => aplicar(item, { status: "arquivado" }, "Arquivada. Fica em Fechadas."),
       abrirLink: () => item.link && openUrl(item.link),
       editar: (campo: CampoEditavel) => {
         selecionar();
@@ -897,7 +935,7 @@ export default function Principal() {
       <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true" className="shrink-0">
         <path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       </svg>
-      <span className="flex-1 whitespace-nowrap">Nova captura</span>
+      <span className="flex-1 whitespace-nowrap">Nova tarefa</span>
       <kbd className="truncate font-sans text-xs text-apagado">{rotuloAtalho(atalho)}</kbd>
     </button>
   );
@@ -1015,7 +1053,7 @@ export default function Principal() {
 
           {avisoAtalho && (
             <p className="mb-5 rounded-xl bg-atraso-claro px-4 py-3 text-sm text-atraso">
-              O atalho global não funcionou: {avisoAtalho}. Use Nova captura enquanto isso.
+              O atalho global não funcionou: {avisoAtalho}. Use Nova tarefa enquanto isso.
             </p>
           )}
           {erro && <p className="mb-5 rounded-xl bg-atraso-claro px-4 py-3 text-sm text-atraso">Erro no banco: {erro}</p>}
@@ -1085,7 +1123,7 @@ export default function Principal() {
 
           {itens?.length === 0 && lista === "inbox" && (
             <p className="mt-16 text-center text-[15px] text-apagado">
-              Aperte {rotuloAtalho(atalho)} em qualquer janela para capturar um pedido.
+              Aperte {rotuloAtalho(atalho)} em qualquer janela para anotar uma tarefa nova.
             </p>
           )}
           {itens?.length === 0 && lista === "aguardando" && (
@@ -1110,6 +1148,7 @@ export default function Principal() {
               aoAvisar={mostrarAviso}
               aoArrastar={(item) => (arrastado.current = item)}
               aoCopiarDaily={copiarDaily}
+              aoAbrir={setEditando}
               atalhoCaptura={rotuloAtalho(atalho)}
             />
           )}
@@ -1124,6 +1163,10 @@ export default function Principal() {
               aoAlterar={carregar}
               aoAvisar={mostrarAviso}
             />
+          )}
+
+          {lista === "fechadas" && (
+            <Fechadas versao={versao} aoRestaurar={restaurar} aoAbrir={setEditando} aoApagar={apagar} />
           )}
 
           {lista === "regras" && <Regras aoAvisar={mostrarAviso} />}
@@ -1197,7 +1240,7 @@ export default function Principal() {
                           if (e.key === "Escape") {
                             e.preventDefault();
                             setEdicao(null);
-                          } else if (e.key === "Enter" && !e.shiftKey) {
+                          } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                             e.preventDefault();
                             confirmarEdicao(item);
                           }
@@ -1283,12 +1326,19 @@ export default function Principal() {
                 <Dica teclas="Ctrl+C">copiar a lista</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
               </>
+            ) : lista === "fechadas" ? (
+              <>
+                <span>Clique numa tarefa para abrir</span>
+                <Dica teclas="Z">desfazer</Dica>
+                <Dica teclas="Ctrl+K">buscar</Dica>
+                <Dica teclas="Tab">trocar tela</Dica>
+              </>
             ) : lista === "dia" ? (
               <>
-                <span>Arraste os cartões entre as colunas</span>
+                <span>Clique num cartão para abrir, arraste entre as colunas</span>
                 <Dica teclas="Ctrl+C">resumo da daily</Dica>
                 <Dica teclas="Ctrl+K">buscar</Dica>
-                <Dica teclas="C">nova captura</Dica>
+                <Dica teclas="C">nova tarefa</Dica>
                 <Dica teclas="Z">desfazer</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
               </>
@@ -1318,6 +1368,7 @@ export default function Principal() {
                 {lista === "aguardando" && <Dica teclas="Enter">voltar para A fazer</Dica>}
                 <Dica teclas="W">{lista === "aguardando" ? "quem e quando" : "aguardando"}</Dica>
                 {lista === "inbox" && devopsAtivo && <Dica teclas="S">Azure DevOps</Dica>}
+                <Dica teclas="A">abrir</Dica>
                 <Dica teclas="F">focar</Dica>
                 <Dica teclas="P">prazo</Dica>
                 <Dica teclas={prioridades.length > 1 ? `1–${Math.min(prioridades.length, 9)}` : "1"}>prioridade</Dica>
@@ -1328,6 +1379,7 @@ export default function Principal() {
                 <Dica teclas="B">cobrou de novo</Dica>
                 <Dica teclas="X">concluir</Dica>
                 <Dica teclas="E">arquivar</Dica>
+                <Dica teclas="Delete">apagar</Dica>
                 <Dica teclas="Ctrl+C">copiar status</Dica>
                 <Dica teclas="Z">desfazer</Dica>
                 <Dica teclas="Ctrl+K">buscar</Dica>
@@ -1396,6 +1448,29 @@ export default function Principal() {
             setConfigAberta(false);
             carregar();
           }}
+        />
+      )}
+      {editando && (
+        <EditorTarefa
+          key={editando.id}
+          item={editando}
+          prioridades={prioridades}
+          aoSalvar={(mudancas) => aplicar(editando, mudancas, "Tarefa salva")}
+          aoFocar={() => {
+            setEditando(null);
+            focar(editando);
+          }}
+          aoConcluir={() => {
+            setEditando(null);
+            if (editando.status === "em_foco") concluirFoco().catch((e) => setErro(String(e)));
+            else aplicar(editando, { status: "feito" }, "Tarefa concluída");
+          }}
+          aoArquivar={() => {
+            setEditando(null);
+            aplicar(editando, { status: "arquivado" }, "Arquivada. Fica em Fechadas.");
+          }}
+          aoApagar={() => apagar(editando)}
+          aoFechar={() => setEditando(null)}
         />
       )}
       {boasVindas && (
@@ -1476,7 +1551,7 @@ function CartaoFoco({ foco, ativo, alvo, arrasto, aoAbrir, aoPausar, aoAbrirMini
         <span className="flex-1 font-titulo text-lg font-medium tabular-nums tracking-tight">
           {formatarCronometro(agora - new Date(foco.inicio).getTime())}
         </span>
-        <button type="button" title="Pausar (P na tela Agora)" aria-label="Pausar" onClick={aoPausar} className="rounded-md p-1 text-suave hover:bg-etiqueta hover:text-tinta">
+        <button type="button" title="Parar o timer (P na tela Agora)" aria-label="Parar o timer" onClick={aoPausar} className="rounded-md p-1 text-suave hover:bg-etiqueta hover:text-tinta">
           <Icone nome="pausa" />
         </button>
         <button

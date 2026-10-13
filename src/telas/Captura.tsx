@@ -205,9 +205,9 @@ export default function Captura() {
     }
   }
 
-  // Enter salva e Esc fecha, de qualquer campo. Campos que usam essas teclas
-  // (sugestões, calendário) marcam o evento com preventDefault antes.
-  function aoTeclar(e: React.KeyboardEvent) {
+  // Enter salva e Esc fecha, de qualquer lugar da janela (não só dos campos). Campos que
+  // usam essas teclas (sugestões, calendário) marcam o evento com preventDefault antes.
+  function aoTeclar(e: React.KeyboardEvent | KeyboardEvent) {
     if (e.defaultPrevented) return;
     // Shift+Enter na descrição quebra a linha.
     if (e.key === "Enter" && e.shiftKey && e.target instanceof HTMLTextAreaElement) return;
@@ -224,8 +224,20 @@ export default function Captura() {
     }
   }
 
+  // Sem nada focado (a janela acabou de aparecer), as teclas chegam no body, fora da caixa.
+  const teclarAtual = useRef(aoTeclar);
+  teclarAtual.current = aoTeclar;
+  useEffect(() => {
+    const aoTeclarNaJanela = (e: KeyboardEvent) => {
+      if (e.target === document.body || e.target === document.documentElement) teclarAtual.current(e);
+    };
+    window.addEventListener("keydown", aoTeclarNaJanela);
+    return () => window.removeEventListener("keydown", aoTeclarNaJanela);
+  }, []);
+
   return (
-    <div ref={caixa} onKeyDown={aoTeclar} className="bg-folha px-[22px] pt-4 pb-3.5 text-tinta">
+    // tabIndex: clicar num espaço vazio foca a caixa, e o Enter continua salvando.
+    <div ref={caixa} tabIndex={-1} onKeyDown={aoTeclar} className="bg-folha px-[22px] pt-4 pb-3.5 text-tinta outline-none">
       {modo === "formulario" ? (
         <Formulario
           valores={valores}
@@ -293,7 +305,7 @@ export default function Captura() {
         {erro ? (
           <span className="text-atraso">{erro}</span>
         ) : modo === "avancado" ? (
-          <span>Use @pessoa, #projeto, !prioridade e &gt;prazo. Enter salva, Esc fecha.</span>
+          <span className="truncate">Use @pessoa, #projeto, !prioridade e &gt;prazo. Enter salva, Esc fecha.</span>
         ) : resumoDasMarcacoes(valores, captura, prioridades) ? (
           <span className="truncate text-destaque-tinta">Do título: {resumoDasMarcacoes(valores, captura, prioridades)}. Enter salva.</span>
         ) : (
@@ -307,6 +319,15 @@ export default function Captura() {
           className="ml-auto shrink-0 hover:text-tinta"
         >
           {modo === "formulario" ? "Modo avançado" : "Modo formulário"} <kbd className="font-sans">Ctrl+.</kbd>
+        </button>
+        <button
+          type="button"
+          disabled={salvando}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={salvar}
+          className="shrink-0 rounded-lg bg-destaque px-4 py-1.5 text-sm font-semibold text-folha hover:opacity-90 disabled:opacity-60"
+        >
+          Salvar <kbd className="ml-1 font-sans font-normal opacity-70">Enter</kbd>
         </button>
       </div>
     </div>

@@ -5,10 +5,19 @@ const MAX_LINHAS = 6;
 interface Props {
   valor: string;
   aoMudar: (valor: string) => void;
+  /** Texto de ajuda no campo vazio. */
+  dica?: string;
+  /** Linhas máximas antes de rolar. */
+  maxLinhas?: number;
 }
 
 /** Descrição do pedido: várias linhas (Shift+Enter quebra a linha, Enter salva). Cresce até 6 linhas. */
-export default function CampoDescricao({ valor, aoMudar }: Props) {
+export default function CampoDescricao({
+  valor,
+  aoMudar,
+  dica = "Detalhes ou a mensagem recebida (opcional). Shift+Enter quebra a linha.",
+  maxLinhas = MAX_LINHAS,
+}: Props) {
   const campo = useRef<HTMLTextAreaElement>(null);
 
   useLayoutEffect(() => {
@@ -21,8 +30,8 @@ export default function CampoDescricao({ valor, aoMudar }: Props) {
     }
     el.style.height = "auto";
     const linha = parseFloat(getComputedStyle(el).lineHeight) || 20;
-    el.style.height = `${Math.min(el.scrollHeight, linha * MAX_LINHAS + 12)}px`;
-  }, [valor]);
+    el.style.height = `${Math.min(el.scrollHeight, linha * maxLinhas + 12)}px`;
+  }, [valor, maxLinhas]);
 
   return (
     <div>
@@ -35,7 +44,7 @@ export default function CampoDescricao({ valor, aoMudar }: Props) {
         rows={1}
         value={valor}
         onChange={(e) => aoMudar(e.target.value)}
-        placeholder="Detalhes ou a mensagem recebida (opcional). Shift+Enter quebra a linha."
+        placeholder={dica}
         className="mt-1 w-full resize-none rounded-lg border border-linha bg-cartao px-3 py-1.5 text-sm leading-5 outline-none placeholder:text-apagado focus:border-destaque"
       />
     </div>
