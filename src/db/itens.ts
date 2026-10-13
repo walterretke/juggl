@@ -47,6 +47,15 @@ export interface Item {
   ultima_cobranca: string | null;
   /** Onde estava antes de ser concluído ou arquivado, para restaurar no lugar certo. */
   status_anterior: Status | null;
+  /** Horário na agenda (AAAA-MM-DDTHH:MM, hora local); sem horário, vale o prazo ou o dia planejado. */
+  agenda_inicio: string | null;
+  agenda_fim: string | null;
+  /** Checklist: quantos passos e quantos já feitos. */
+  subtarefas: number;
+  subtarefas_feitas: number;
+  anexos: number;
+  /** Mensagem opcional deixada ao concluir (pelo overlay de foco). */
+  encerramento: string | null;
 }
 
 /** Campos que a triagem pode mudar. */
@@ -65,6 +74,8 @@ export type Mudancas = Partial<
     | "aguardando_ate"
     | "pessoa_id"
     | "projeto_id"
+    | "agenda_inicio"
+    | "agenda_fim"
   >
 >;
 
@@ -88,7 +99,12 @@ export interface CopiaApagada {
   manuaisSoltos: { id: string; descricao: unknown }[];
   /** Sessões de foco que viraram lançamentos à mão para as horas não sumirem. */
   manuaisCriados: string[];
+  /** Checklist e anexos da tarefa. */
+  filhos: { tabela: string; linhas: Linha[] }[];
 }
+
+/** Tabelas com linhas que pertencem a uma tarefa e vão embora junto com ela. */
+const TABELAS_FILHAS = ["subtarefa", "anexo"];
 
 /** Id do nome igual a `nome`, ignorando maiúsculas, acentos, espaços e _ ("@carla_dias" acha "Carla Dias"). */
 async function buscarPorNome(tabela: "pessoa" | "projeto", coluna: string, nome: string): Promise<string | null> {
@@ -119,8 +135,30 @@ export async function buscarOuCriarProjeto(nome: string): Promise<string> {
   return id;
 }
 
-/** Grava a captura na caixa de entrada e registra o evento `criado` com o tempo da captura. */
-export async function criarItem(captura: Captura, duracaoMs: number | null, descricao: string | null = null): Promise<string> {
+/** Coluna do quadro em que uma tarefa nova entra. */
+export type Destino = "inbox" | "hoje" | "a_fazer";
+
+/** Quantas tarefas abertas estão planejadas para o dia (as "3 de hoje"). */
+export async function contarDoDia(dia: string): Promise<number> {
+  const db = await getDb();
+  const [linha] = await db.select<{ n: number }[]>(
+    "SELECT COUNT(*) AS n FROM item WHERE dia_planejado = $1 AND status IN ('a_fazer', 'pausado', 'em_foco')",
+    [dia],
+  );
+  return linha?.n ?? 0;
+}
+
+/**
+ * Grava a tarefa nova na coluna escolhida (caixa de entrada, Hoje ou A fazer) e registra o
+ * evento `criado` com o tempo da captura. Em Hoje, `quando` diz o momento do dia.
+ */
+export async function criarItem(
+  captura: Captura,
+  duracaoMs: number | null,
+  descricao: string | null = null,
+  destino: Destino = "inbox",
+  quando: Quando | null = null,
+): Promise<string> {
   const db = await getDb();
   const pessoaId = captura.pessoa ? await buscarOuCriarPessoa(captura.pessoa) : null;
   const projetoId = captura.projeto ? await buscarOuCriarProjeto(captura.projeto) : null;
@@ -128,8 +166,9 @@ export async function criarItem(captura: Captura, duracaoMs: number | null, desc
   const agora = agoraIso();
 
   await db.execute(
-    `INSERT INTO item (id, titulo, nota, status, prioridade_id, prazo, projeto_id, pessoa_id, link, origem, id_externo, criado_em, atualizado_em)
-     VALUES ($1, $2, $11, 'inbox', $3, $4, $5, $6, $7, $8, $9, $10, $10)`,
+    `INSERT INTO item (id, titulo, nota, status, prioridade_id, prazo, projeto_id, pessoa_id, link, origem, id_externo, criado_em, atualizado_em,
+                       dia_planejado, quando)
+     VALUES ($1, $2, $11, $12, $3, $4, $5, $6, $7, $8, $9, $10, $10, $13, $14)`,
     [
       id,
       captura.titulo,
@@ -142,6 +181,9 @@ export async function criarItem(captura: Captura, duracaoMs: number | null, desc
       captura.idExterno,
       agora,
       descricao?.trim() || null,
+      destino === "inbox" ? "inbox" : "a_fazer",
+      destino === "hoje" ? dataLocalIso(new Date()) : null,
+      destino === "hoje" ? quando : null,
     ],
   );
   await db.execute("INSERT INTO evento (id, item_id, tipo, timestamp, dados) VALUES ($1, $2, 'criado', $3, $4)", [
@@ -191,7 +233,12 @@ export const SELECT_ITEM = `
                          FROM sessao_manual s WHERE s.item_id = item.id), 0) AS tempo_ms,
          (SELECT COUNT(*) FROM evento e WHERE e.item_id = item.id AND e.tipo = 'cobrado') AS cobrancas,
          (SELECT MAX(e.timestamp) FROM evento e WHERE e.item_id = item.id AND e.tipo = 'cobrado') AS ultima_cobranca,
-         item.status_anterior
+         item.status_anterior, item.agenda_inicio, item.agenda_fim,
+         (SELECT COUNT(*) FROM subtarefa st WHERE st.item_id = item.id) AS subtarefas,
+         (SELECT COUNT(*) FROM subtarefa st WHERE st.item_id = item.id AND st.feita = 1) AS subtarefas_feitas,
+         (SELECT COUNT(*) FROM anexo a WHERE a.item_id = item.id) AS anexos,
+         (SELECT json_extract(e.dados, '$.mensagem') FROM evento e
+           WHERE e.item_id = item.id AND e.tipo = 'concluido' ORDER BY e.timestamp DESC LIMIT 1) AS encerramento
     FROM item
     LEFT JOIN pessoa ON pessoa.id = item.pessoa_id
     LEFT JOIN projeto ON projeto.id = item.projeto_id
@@ -226,6 +273,8 @@ const CAMPOS_EDITAVEIS = [
   "aguardando_ate",
   "pessoa_id",
   "projeto_id",
+  "agenda_inicio",
+  "agenda_fim",
 ] as const;
 
 export async function gravarCampos(id: string, campos: Mudancas): Promise<void> {
@@ -321,6 +370,9 @@ export async function apagarItem(item: Item): Promise<Alteracao> {
   if (!linha) throw new Error("Essa tarefa não existe mais.");
   const eventos = await db.select<Linha[]>("SELECT * FROM evento WHERE item_id = $1", [item.id]);
   const notificacoes = await db.select<Linha[]>("SELECT * FROM notificacao WHERE item_id = $1", [item.id]);
+  const filhos: CopiaApagada["filhos"] = [];
+  for (const tabela of TABELAS_FILHAS)
+    filhos.push({ tabela, linhas: await db.select<Linha[]>(`SELECT * FROM ${tabela} WHERE item_id = $1`, [item.id]) });
   const manuaisSoltos = await db.select<{ id: string; descricao: unknown }[]>(
     "SELECT id, descricao FROM sessao_manual WHERE item_id = $1",
     [item.id],
@@ -344,9 +396,10 @@ export async function apagarItem(item: Item): Promise<Alteracao> {
     item.id,
   ]);
   await db.execute("DELETE FROM notificacao WHERE item_id = $1", [item.id]);
+  for (const tabela of TABELAS_FILHAS) await db.execute(`DELETE FROM ${tabela} WHERE item_id = $1`, [item.id]);
   await db.execute("DELETE FROM evento WHERE item_id = $1", [item.id]);
   await db.execute("DELETE FROM item WHERE id = $1", [item.id]);
-  return { itemId: item.id, anterior: {}, eventos: [], copia: { item: linha, eventos, notificacoes, manuaisSoltos, manuaisCriados } };
+  return { itemId: item.id, anterior: {}, eventos: [], copia: { item: linha, eventos, notificacoes, manuaisSoltos, manuaisCriados, filhos } };
 }
 
 async function restaurarApagado(copia: CopiaApagada): Promise<void> {
@@ -354,6 +407,7 @@ async function restaurarApagado(copia: CopiaApagada): Promise<void> {
   await inserirLinha("item", copia.item);
   for (const e of copia.eventos) await inserirLinha("evento", e);
   for (const n of copia.notificacoes) await inserirLinha("notificacao", n);
+  for (const { tabela, linhas } of copia.filhos) for (const l of linhas) await inserirLinha(tabela, l);
   for (const s of copia.manuaisSoltos)
     await db.execute("UPDATE sessao_manual SET item_id = $1, descricao = $2 WHERE id = $3", [copia.item.id, s.descricao, s.id]);
   for (const id of copia.manuaisCriados) await db.execute("DELETE FROM sessao_manual WHERE id = $1", [id]);

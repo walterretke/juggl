@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatarCronometro, formatarDuracao } from "./datas";
+import { fimDaSemana, fimDoMes, formatarCronometro, formatarDuracao } from "./datas";
 
 describe("formatarCronometro", () => {
   it("mostra minutos e segundos abaixo de uma hora", () => {
@@ -20,5 +20,19 @@ describe("formatarDuracao", () => {
     expect(formatarDuracao(25 * 60_000)).toBe("25 min");
     expect(formatarDuracao(120 * 60_000)).toBe("2 h");
     expect(formatarDuracao(130 * 60_000)).toBe("2 h 10 min");
+  });
+});
+
+describe("fimDaSemana e fimDoMes", () => {
+  it("a semana termina no domingo", () => {
+    expect(fimDaSemana(new Date(2026, 9, 13))).toBe("2026-10-18"); // terça
+    expect(fimDaSemana(new Date(2026, 9, 18))).toBe("2026-10-18"); // domingo é o próprio dia
+    expect(fimDaSemana(new Date(2026, 9, 19))).toBe("2026-10-25"); // segunda
+  });
+
+  it("o mês termina no último dia, inclusive em fevereiro e na virada do ano", () => {
+    expect(fimDoMes(new Date(2026, 9, 13))).toBe("2026-10-31");
+    expect(fimDoMes(new Date(2028, 1, 3))).toBe("2028-02-29");
+    expect(fimDoMes(new Date(2026, 11, 31))).toBe("2026-12-31");
   });
 });

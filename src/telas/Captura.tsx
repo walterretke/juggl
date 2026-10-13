@@ -7,16 +7,25 @@ import { reconhecerLink } from "../captura/links";
 import { marcacoesDoTitulo, parseCaptura, type Captura as DadosCaptura, type OpcaoPrioridade } from "../captura/parser";
 import { resolverTitulo, tituloPadrao } from "../captura/titulo";
 import { avancarNumeroAtividade, gravarConfig, lerConfig, lerNumeroAtividade } from "../db/config";
-import { criarItem, listarSugestoes } from "../db/itens";
+import { contarDoDia, criarItem, listarSugestoes, type Destino } from "../db/itens";
+import { MAX_DO_DIA } from "../db/ritual";
+import { dataLocalIso } from "../captura/datas";
+import { quandoPadrao } from "../ritual/quadro";
 import { listarPrioridades, type Prioridade } from "../db/prioridades";
 import Avancada from "./captura/Avancada";
 import CampoDescricao from "./captura/CampoDescricao";
-import Formulario, { FORMULARIO_VAZIO, type ValoresFormulario } from "./captura/Formulario";
+import Formulario, { FORMULARIO_VAZIO, Opcoes, type ValoresFormulario } from "./captura/Formulario";
 import Origem from "./Origem";
 
 const LARGURA = 640;
 
 type Modo = "formulario" | "avancado";
+
+const DESTINOS: { valor: Destino; nome: string }[] = [
+  { valor: "inbox", nome: "Chegou" },
+  { valor: "hoje", nome: "Hoje" },
+  { valor: "a_fazer", nome: "A fazer" },
+];
 
 interface Sugestoes {
   pessoas: string[];
@@ -85,6 +94,8 @@ export default function Captura() {
   const [prioridades, setPrioridades] = useState<Prioridade[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  /** Coluna do Meu dia em que a tarefa entra; a última escolha fica lembrada. */
+  const [destino, setDestino] = useState<Destino>("inbox");
   const momentoAtalho = useRef<number | null>(null);
   // Link anexado na última captura: não volta sozinho na próxima, porque provavelmente
   // ainda está na área de transferência e não tem relação com o novo pedido.
@@ -94,6 +105,7 @@ export default function Captura() {
 
   useEffect(() => {
     lerConfig("modo_captura").then((salvo) => salvo === "avancado" && setModo("avancado"));
+    lerConfig("destino_captura").then((salvo) => (salvo === "hoje" || salvo === "a_fazer") && setDestino(salvo));
   }, []);
 
   // Cada atalho: lê a área de transferência, atualiza as listas e foca o título.
@@ -189,8 +201,12 @@ export default function Captura() {
     }
     setSalvando(true);
     try {
+      if (destino === "hoje" && (await contarDoDia(dataLocalIso(new Date()))) >= MAX_DO_DIA) {
+        setErro(`Hoje já tem ${MAX_DO_DIA} tarefas. Escolha Chegou ou A fazer.`);
+        return;
+      }
       const duracao = momentoAtalho.current ? Date.now() - momentoAtalho.current : null;
-      await criarItem({ ...captura, titulo: titulo.titulo }, duracao, descricao);
+      await criarItem({ ...captura, titulo: titulo.titulo }, duracao, descricao, destino, quandoPadrao(new Date()));
       if (titulo.usouPadrao) await avancarNumeroAtividade(numero);
       if (captura.link === linkCopiado) ultimoLinkUsado.current = linkCopiado;
       await emit("item:criado");
@@ -254,6 +270,7 @@ export default function Captura() {
             setDescricao(d);
             setErro(null);
           }}
+          aoSalvar={salvar}
         />
       ) : (
         <Avancada
@@ -276,9 +293,24 @@ export default function Captura() {
               setDescricao(d);
               setErro(null);
             }}
+            aoSalvar={salvar}
           />
         </div>
       )}
+
+      <div className="mt-3.5">
+        <span className="block text-xs font-semibold text-suave">Entra em</span>
+        <Opcoes
+          rotulo="Coluna do Meu dia"
+          valor={destino}
+          aoEscolher={(d) => {
+            setDestino(d);
+            setErro(null);
+            gravarConfig("destino_captura", d).catch(() => {});
+          }}
+          opcoes={DESTINOS}
+        />
+      </div>
 
       {captura.link && (
         <div className="mt-3 flex">

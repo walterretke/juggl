@@ -101,6 +101,12 @@ function Cartao({ item, hoje, arrasto, aoAbrir, numero, children }: PropsCartao)
         {prazo && <Etiqueta classe={urgente(prazo) ? "bg-atraso-claro text-atraso" : undefined}>{prazo}</Etiqueta>}
         {item.prioridade && <Etiqueta classe={ETIQUETA_PRIORIDADE[item.prioridade_cor ?? "cinza"]}>{item.prioridade}</Etiqueta>}
         {item.status === "pausado" && <Etiqueta>Pausado</Etiqueta>}
+        {item.subtarefas > 0 && (
+          <Etiqueta classe={item.subtarefas_feitas === item.subtarefas ? "bg-ok-claro text-ok" : undefined}>
+            ☑ {item.subtarefas_feitas}/{item.subtarefas}
+          </Etiqueta>
+        )}
+        {item.anexos > 0 && <Etiqueta>📎 {item.anexos}</Etiqueta>}
       </div>
       {item.nota_pausa && (
         <p className="line-clamp-2 text-[13px] text-suave" title={item.nota_pausa}>

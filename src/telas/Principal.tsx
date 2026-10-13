@@ -114,7 +114,7 @@ const ROTULO_CAMPO: Record<CampoEditavel, string> = {
   projeto: "Projeto (vazio tira)",
   pessoa: "Quem pediu (vazio tira)",
   titulo: "Título",
-  nota: "Descrição (Enter quebra a linha, Ctrl+Enter salva, vazio tira)",
+  nota: "Descrição",
 };
 
 
@@ -771,7 +771,7 @@ export default function Principal() {
           "#": () => iniciarEdicao("projeto", item),
           "@": () => iniciarEdicao("pessoa", item),
           r: () => iniciarEdicao("titulo", item),
-          d: () => iniciarEdicao("nota", item),
+          d: () => setEditando(item),
           b: () => cobrar(item),
           m: () => setMenu("prometido"),
           o: () => item.link && openUrl(item.link),
@@ -872,7 +872,9 @@ export default function Principal() {
       editar: (campo: CampoEditavel) => {
         selecionar();
         setMenu(null);
-        iniciarEdicao(campo, item);
+        // A descrição tem formatação: edita no editor da tarefa.
+        if (campo === "nota") setEditando(item);
+        else iniciarEdicao(campo, item);
       },
       definirPrazo: (prazo: string | null) => {
         setMenu(null);
@@ -1185,7 +1187,7 @@ export default function Principal() {
               aoConcluir={concluirFoco}
               aoCobrar={() => foco && cobrar(foco.item)}
               aoPlanejar={() => trocarLista("dia")}
-              aoMudarNota={(nota) => foco && aplicar(foco.item, { nota }, nota ? "Descrição salva" : "Descrição removida")}
+              aoEditar={() => foco && setEditando(foco.item)}
               aoAbrirMini={abrirMini}
             />
           )}
@@ -1230,27 +1232,6 @@ export default function Principal() {
                     <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-apagado">
                       {ROTULO_CAMPO[edicao.campo]}
                     </label>
-                    {edicao.campo === "nota" ? (
-                      <textarea
-                        autoFocus
-                        rows={Math.min(Math.max(edicao.valor.split("\n").length, 3), 10)}
-                        value={edicao.valor}
-                        onChange={(e) => setEdicao({ ...edicao, valor: e.target.value, erro: null })}
-                        onKeyDown={(e) => {
-                          if (e.key === "Escape") {
-                            e.preventDefault();
-                            setEdicao(null);
-                          } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                            e.preventDefault();
-                            confirmarEdicao(item);
-                          }
-                        }}
-                        // Clicar fora guarda o texto: descrição é longa demais para perder.
-                        onBlur={() => confirmarEdicao(item)}
-                        placeholder="Detalhes, a mensagem recebida, links..."
-                        className="w-full resize-y rounded-lg border border-linha bg-folha px-3 py-1.5 text-sm leading-5 outline-none focus:border-destaque"
-                      />
-                    ) : (
                     <input
                       autoFocus
                       onFocus={(e) => e.target.select()}
@@ -1266,7 +1247,6 @@ export default function Principal() {
                       onBlur={() => setEdicao(null)}
                       className="w-full rounded-lg border border-linha bg-folha px-3 py-1.5 text-[15px] outline-none focus:border-destaque"
                     />
-                    )}
                     <datalist id="sugestoes-edicao">
                       {sugestoesEdicao.map((s) => (
                         <option key={s} value={s} />
@@ -1471,6 +1451,7 @@ export default function Principal() {
           }}
           aoApagar={() => apagar(editando)}
           aoFechar={() => setEditando(null)}
+          aoMudarPartes={carregar}
         />
       )}
       {boasVindas && (

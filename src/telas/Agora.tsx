@@ -4,6 +4,7 @@ import type { Foco } from "../db/foco";
 import type { Item } from "../db/itens";
 import { NOME_QUANDO } from "../ritual/quadro";
 import { COR_ORIGEM, NOME_ORIGEM } from "./origens";
+import TextoFormatado from "./TextoFormatado";
 
 interface Props {
   foco: Foco | null;
@@ -17,7 +18,8 @@ interface Props {
   aoConcluir: () => void;
   aoCobrar: () => void;
   aoPlanejar: () => void;
-  aoMudarNota: (nota: string | null) => void;
+  /** Abre a tarefa em foco no editor (D). */
+  aoEditar: () => void;
   aoAbrirMini: () => void;
 }
 
@@ -32,34 +34,23 @@ export default function Agora({
   aoConcluir,
   aoCobrar,
   aoPlanejar,
-  aoMudarNota,
+  aoEditar,
   aoAbrirMini,
 }: Props) {
   const [agora, setAgora] = useState(() => Date.now());
-  /** Texto da descrição sendo editado (null: não está editando). */
-  const [nota, setNota] = useState<string | null>(null);
 
-  useEffect(() => setNota(null), [foco?.item.id]);
-
-  // D edita a descrição do item em foco.
+  // D abre a tarefa em foco para editar.
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
-      if (!foco || nota !== null || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.target instanceof HTMLElement && e.target.closest("input, textarea")) return;
+      if (!foco || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.target instanceof HTMLElement && e.target.closest("input, textarea, [contenteditable]")) return;
       if (e.key.toLowerCase() !== "d") return;
       e.preventDefault();
-      setNota(foco.item.nota ?? "");
+      aoEditar();
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [foco, nota]);
-
-  function salvarNota() {
-    if (nota === null || !foco) return;
-    const nova = nota.trim() || null;
-    setNota(null);
-    if (nova !== foco.item.nota) aoMudarNota(nova);
-  }
+  }, [foco, aoEditar]);
 
   useEffect(() => {
     if (!foco) return;
@@ -82,34 +73,20 @@ export default function Agora({
           <p className="text-xs font-semibold uppercase tracking-wider text-destaque">Fazendo agora</p>
           <h2 className="mt-2 font-titulo text-[28px] font-medium leading-tight tracking-tight">{foco.item.titulo}</h2>
           {meta.length > 0 && <p className="mt-1 text-[15px] text-suave">{meta.join(" · ")}</p>}
-          {nota !== null ? (
-            <textarea
-              autoFocus
-              rows={Math.min(Math.max(nota.split("\n").length, 3), 10)}
-              value={nota}
-              onChange={(e) => setNota(e.target.value)}
-              onBlur={salvarNota}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  setNota(null);
-                } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                  e.preventDefault();
-                  salvarNota();
-                }
-              }}
-              placeholder="Detalhes, a mensagem recebida, links... (Enter quebra a linha, Ctrl+Enter salva)"
-              className="mt-3 w-full resize-y rounded-lg border border-destaque bg-folha px-3 py-2 text-[15px] leading-relaxed outline-none"
-            />
-          ) : foco.item.nota ? (
-            <p
+          {foco.item.nota && (
+            <div
               title="Dois cliques para editar (D)"
-              onDoubleClick={() => setNota(foco.item.nota ?? "")}
-              className="mt-3 max-h-40 overflow-y-auto whitespace-pre-wrap text-[15px] leading-relaxed text-tinta-2 select-text"
+              onDoubleClick={aoEditar}
+              className="mt-3 max-h-48 overflow-y-auto text-[15px] leading-relaxed text-tinta-2 select-text"
             >
-              {foco.item.nota}
+              <TextoFormatado texto={foco.item.nota} />
+            </div>
+          )}
+          {foco.item.subtarefas > 0 && (
+            <p className="mt-2 text-sm text-suave">
+              Checklist: {foco.item.subtarefas_feitas} de {foco.item.subtarefas} feitos
             </p>
-          ) : null}
+          )}
           {(cobranca || promessa) && (
             <p className="mt-1 text-sm font-semibold text-atraso">{[cobranca, promessa].filter(Boolean).join(" · ")}</p>
           )}
@@ -140,10 +117,10 @@ export default function Agora({
             </button>
             <button
               type="button"
-              onClick={() => setNota(foco.item.nota ?? "")}
+              onClick={aoEditar}
               className="rounded-lg px-4 py-2 text-sm text-suave hover:bg-etiqueta hover:text-tinta"
             >
-              {foco.item.nota ? "Editar descrição" : "Descrição"} <kbd className="ml-1 font-sans font-normal text-apagado">D</kbd>
+              Editar tarefa <kbd className="ml-1 font-sans font-normal text-apagado">D</kbd>
             </button>
             <button
               type="button"

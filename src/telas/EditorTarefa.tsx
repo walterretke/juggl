@@ -3,6 +3,7 @@ import { formatarDuracao } from "../captura/datas";
 import { buscarOuCriarPessoa, buscarOuCriarProjeto, listarSugestoes, type Item, type Mudancas } from "../db/itens";
 import type { Prioridade } from "../db/prioridades";
 import Formulario, { type ValoresFormulario } from "./captura/Formulario";
+import Checklist from "./Checklist";
 import Icone, { type NomeIcone } from "./Icone";
 
 interface Props {
@@ -14,6 +15,8 @@ interface Props {
   aoArquivar: () => void;
   aoApagar: () => void;
   aoFechar: () => void;
+  /** Checklist ou anexos mudaram (gravam na hora): recarrega as telas. */
+  aoMudarPartes: () => void;
 }
 
 const NOME_STATUS: Record<Item["status"], string> = {
@@ -71,7 +74,17 @@ function Botao({ icone, children, aoClicar, perigo }: { icone: NomeIcone; childr
  * A tarefa aberta para editar: título, descrição (Enter quebra a linha), quem pediu, projeto,
  * prioridade e prazo, com focar, concluir, arquivar e apagar. Ctrl+Enter salva, Esc fecha.
  */
-export default function EditorTarefa({ item, prioridades, aoSalvar, aoFocar, aoConcluir, aoArquivar, aoApagar, aoFechar }: Props) {
+export default function EditorTarefa({
+  item,
+  prioridades,
+  aoSalvar,
+  aoFocar,
+  aoConcluir,
+  aoArquivar,
+  aoApagar,
+  aoFechar,
+  aoMudarPartes,
+}: Props) {
   const [valores, setValores] = useState<ValoresFormulario>(() => valoresDoItem(item));
   const [descricao, setDescricao] = useState(item.nota ?? "");
   const [sugestoes, setSugestoes] = useState<{ pessoas: string[]; projetos: string[] }>({ pessoas: [], projetos: [] });
@@ -150,7 +163,19 @@ export default function EditorTarefa({ item, prioridades, aoSalvar, aoFocar, aoC
             setErro(null);
           }}
           rotuloTitulo="Tarefa"
-          dicaDescricao="Detalhes, a mensagem recebida, links… Enter quebra a linha."
+          dicaDescricao="Detalhes, a mensagem recebida, links…"
+          modoDescricao="editor"
+          aoSalvar={salvar}
+          depoisDaDescricao={
+            <>
+              {item.encerramento && (
+                <p className="-mt-1 rounded-lg bg-ok-claro px-3 py-2 text-sm text-ok">
+                  <b>Ao concluir:</b> {item.encerramento}
+                </p>
+              )}
+              <Checklist itemId={item.id} aoMudar={aoMudarPartes} />
+            </>
+          }
         />
         {erro && <p className="mt-3 text-sm text-atraso">{erro}</p>}
         <div className="mt-4 flex flex-wrap items-center gap-1 border-t border-linha pt-3">

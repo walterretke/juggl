@@ -6,6 +6,7 @@ import Calendario from "./captura/Calendario";
 import { BOLINHA_PRIORIDADE, ETIQUETA_PRIORIDADE } from "./cores";
 import Icone, { type NomeIcone } from "./Icone";
 import { COR_ORIGEM, NOME_ORIGEM } from "./origens";
+import TextoFormatado from "./TextoFormatado";
 
 export type Menu = "prazo" | "prometido" | "prioridade" | "aguardando";
 export type CampoEditavel = "prazo" | "projeto" | "pessoa" | "titulo" | "nota";
@@ -113,6 +114,8 @@ export default function ItemLista({ item, indice, ativo, lista, agora, prioridad
   const extras = [
     item.nota_pausa && `Parou em: ${item.nota_pausa}`,
     origemComId(item),
+    item.subtarefas > 0 && `checklist ${item.subtarefas_feitas}/${item.subtarefas}`,
+    item.anexos > 0 && `${item.anexos} ${item.anexos === 1 ? "anexo" : "anexos"}`,
     item.tempo_ms > 0 && `${formatarDuracao(item.tempo_ms)} em foco`,
   ].filter(Boolean);
 
@@ -226,17 +229,18 @@ export default function ItemLista({ item, indice, ativo, lista, agora, prioridad
             {extras.length > 0 && <span className="truncate">{extras.join(" · ")}</span>}
           </div>
           {item.nota && !children && (
-            <button
-              type="button"
+            <div
+              role="button"
+              tabIndex={-1}
               title="Descrição: clique para editar (D)"
               onClick={(e) => {
                 e.stopPropagation();
                 acoes.editar("nota");
               }}
-              className="mt-1 line-clamp-3 w-full rounded text-left text-[13px] leading-5 whitespace-pre-line text-apagado hover:text-tinta-2"
+              className="mt-1 line-clamp-4 w-full cursor-pointer rounded text-left text-[13px] leading-5 text-apagado hover:text-tinta-2"
             >
-              {item.nota}
-            </button>
+              <TextoFormatado texto={item.nota} className="gap-0.5" />
+            </div>
           )}
         </div>
 

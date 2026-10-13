@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { dataLocalIso, descreverPrazo } from "../../captura/datas";
+import { dataLocalIso, descreverPrazo, fimDaSemana, fimDoMes } from "../../captura/datas";
 import type { Prioridade } from "../../db/prioridades";
 import { ETIQUETA_PRIORIDADE } from "../cores";
 import Autocompletar from "./Autocompletar";
@@ -32,8 +32,13 @@ interface Props {
   tituloSugerido: string;
   descricao: string;
   aoMudarDescricao: (descricao: string) => void;
-  /** Ajuda da descrição (no editor, Enter quebra a linha). */
+  /** Ajuda da descrição. */
   dicaDescricao?: string;
+  /** "editor": Enter quebra a linha na descrição e Ctrl+Enter salva; "captura": Enter salva. */
+  modoDescricao?: "captura" | "editor";
+  aoSalvar?: () => void;
+  /** Conteúdo extra logo depois da descrição (checklist e anexos, no editor). */
+  depoisDaDescricao?: React.ReactNode;
   /** Pergunta do título ("O que chegou?" na nova tarefa). */
   rotuloTitulo?: string;
 }
@@ -51,7 +56,7 @@ const chipMarcado = `${chip} bg-destaque font-semibold text-folha`;
  * Grupo de opções com uma parada só no Tab: as setas trocam a escolha,
  * como um grupo de botões de rádio.
  */
-function Opcoes<T>({
+export function Opcoes<T>({
   rotulo,
   opcoes,
   valor,
@@ -111,6 +116,9 @@ export default function Formulario({
   descricao,
   aoMudarDescricao,
   dicaDescricao,
+  modoDescricao = "captura",
+  aoSalvar,
+  depoisDaDescricao,
   rotuloTitulo = "O que chegou?",
 }: Props) {
   const [calendario, setCalendario] = useState(false);
@@ -122,7 +130,11 @@ export default function Formulario({
     requestAnimationFrame(() => grupoPrazo.current?.querySelector<HTMLElement>("[aria-checked=true]")?.focus());
   }
   const hoje = dataLocalIso(new Date());
-  const dataEscolhida = valores.prazo && valores.prazo !== hoje && valores.prazo !== amanha() ? valores.prazo : null;
+  // "Esta semana" e "Este mês" só aparecem quando caem num dia diferente das opções anteriores.
+  const prontas = [hoje, amanha(), fimDaSemana(new Date()), fimDoMes(new Date())];
+  const semana = prontas[2] !== hoje && prontas[2] !== prontas[1] ? prontas[2] : null;
+  const mes = prontas[3] !== hoje && prontas[3] !== prontas[1] && prontas[3] !== prontas[2] ? prontas[3] : null;
+  const dataEscolhida = valores.prazo && ![hoje, amanha(), semana, mes].includes(valores.prazo) ? valores.prazo : null;
 
   return (
     <div className="flex flex-col gap-3.5">
@@ -142,7 +154,8 @@ export default function Formulario({
         />
       </div>
 
-      <CampoDescricao valor={descricao} aoMudar={aoMudarDescricao} dica={dicaDescricao} maxLinhas={dicaDescricao ? 12 : undefined} />
+      <CampoDescricao valor={descricao} aoMudar={aoMudarDescricao} dica={dicaDescricao} modo={modoDescricao} aoSalvar={aoSalvar} />
+      {depoisDaDescricao}
 
       <div className="flex gap-3">
         <Autocompletar
@@ -194,6 +207,8 @@ export default function Formulario({
               { valor: "", nome: "Sem prazo" },
               { valor: hoje, nome: "Hoje" },
               { valor: amanha(), nome: "Amanhã" },
+              ...(semana ? [{ valor: semana, nome: "Esta semana" }] : []),
+              ...(mes ? [{ valor: mes, nome: "Este mês" }] : []),
               { valor: "outra", nome: dataEscolhida ? descreverPrazo(dataEscolhida, new Date()) : "Escolher data…" },
             ]}
           />

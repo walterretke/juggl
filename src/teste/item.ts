@@ -30,6 +30,12 @@ export function item(id: string, extra: Partial<Item> = {}): Item {
     cobrancas: 0,
     ultima_cobranca: null,
     status_anterior: null,
+    agenda_inicio: null,
+    agenda_fim: null,
+    subtarefas: 0,
+    subtarefas_feitas: 0,
+    anexos: 0,
+    encerramento: null,
     ...extra,
   };
 }

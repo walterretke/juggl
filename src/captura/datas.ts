@@ -64,3 +64,14 @@ export function formatarDuracao(ms: number): string {
   if (h === 0) return `${m} min`;
   return m === 0 ? `${h} h` : `${h} h ${m} min`;
 }
+
+/** Último dia da semana (domingo; a semana vai de segunda a domingo, como nas Horas). */
+export function fimDaSemana(hoje: Date): string {
+  const faltam = (7 - hoje.getDay()) % 7;
+  return dataLocalIso(new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + faltam));
+}
+
+/** Último dia do mês. */
+export function fimDoMes(hoje: Date): string {
+  return dataLocalIso(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0));
+}
