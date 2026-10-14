@@ -27,7 +27,7 @@ interface Props {
   aoPausar: () => void;
   /** Cancela o foco sem contar o tempo (pede confirmação). */
   aoCancelarFoco: () => void;
-  aoConcluir: () => void;
+  aoConcluir: () => void | Promise<void>;
   /** Algo mudou sem passar por aoAplicar (plano confirmado, dia fechado): recarrega tudo. */
   aoAlterar: () => void;
   aoAvisar: (texto: string) => void;
@@ -174,6 +174,8 @@ export default function MeuDia({
         setFeitos(concluidos);
         setHoras(tempo);
         setFechado(jaFechado);
+        // Abre Depois se Hoje está vazio e não fecha sozinho ao mover cartões; só o clique recolhe.
+        setDepoisAberto((aberto) => aberto ?? montarQuadro(abertos, data).hoje.length === 0);
       })
       .catch((e) => setErro(String(e)));
   }, [versao, diaHoje]);
@@ -194,7 +196,6 @@ export default function MeuDia({
 
   const sessao = foco ? agora - new Date(foco.inicio).getTime() : 0;
   const totalDepois = quadro.depois.reduce((n, g) => n + g.itens.length, 0);
-  // Depois fica aberto enquanto Hoje tem vaga, para escolher dali; depois recolhe.
   const mostrarDepois = depoisAberto ?? quadro.hoje.length === 0;
 
   const etapaFeita = [quadro.chegou.length === 0, planejado, fechado, fechado];
@@ -218,25 +219,37 @@ export default function MeuDia({
       if (coluna === "fazendo") {
         if (!emFoco) aoFocar(item);
       } else if (coluna === "feito") {
-        if (emFoco) aoConcluir();
+        if (emFoco) await aoConcluir();
         else if (item.status !== "feito") await aoAplicar(item, { status: "feito" }, "Concluído");
       } else if (emFoco) {
-        aoAvisar("Esse item está em foco. Pause ou conclua antes de mudar de coluna.");
-      } else if (coluna === "hoje") {
-        await planejar(item);
-      } else if (item.status === "feito") {
-        await aoAplicar(item, { status: coluna === "chegou" ? "inbox" : "a_fazer" }, "Reaberto");
-      } else if (coluna === "chegou") {
-        if (item.status !== "inbox")
-          await aoAplicar(item, { status: "inbox", dia_planejado: null, quando: null }, "Voltou para a caixa de entrada");
+        // Tirar do Fazendo agora pausa o foco (sem pedir a nota) e leva o cartão para a coluna.
+        if (!foco) return;
+        await encerrarFoco(foco, "pausa");
+        await mover(coluna, { ...item, status: "pausado" });
+        aoAvisar(coluna === "hoje" ? "Timer parado. A tarefa continua em Hoje." : "Timer parado.");
+        aoAlterar();
       } else {
-        const mudancas: Mudancas = { dia_planejado: null, quando: null };
-        if (item.status === "inbox") mudancas.status = "a_fazer";
-        if (item.status !== "inbox" && item.dia_planejado !== diaHoje) return;
-        await aoAplicar(item, mudancas, item.status === "inbox" ? "Movido para A fazer" : "Tirado de hoje");
+        await mover(coluna, item);
       }
     } catch (e) {
       setErro(String(e));
+    }
+  }
+
+  /** Move um cartão (que não está em foco) para Chegou, Hoje ou Depois. */
+  async function mover(coluna: Exclude<Coluna, "fazendo" | "feito">, item: Item) {
+    if (coluna === "hoje") {
+      await planejar(item);
+    } else if (item.status === "feito") {
+      await aoAplicar(item, { status: coluna === "chegou" ? "inbox" : "a_fazer" }, "Reaberto");
+    } else if (coluna === "chegou") {
+      if (item.status !== "inbox")
+        await aoAplicar(item, { status: "inbox", dia_planejado: null, quando: null }, "Voltou para a caixa de entrada");
+    } else {
+      const mudancas: Mudancas = { dia_planejado: null, quando: null };
+      if (item.status === "inbox") mudancas.status = "a_fazer";
+      if (item.status !== "inbox" && item.dia_planejado !== diaHoje) return;
+      await aoAplicar(item, mudancas, item.status === "inbox" ? "Movido para A fazer" : "Tirado de hoje");
     }
   }
 
@@ -453,7 +466,7 @@ export default function MeuDia({
         </section>
       )}
 
-      <section aria-label="Quadro do dia" className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1.15fr_1.25fr_1fr]">
+      <section aria-label="Quadro do dia" className="grid grid-cols-1 items-stretch gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1.15fr_1.25fr_1fr]">
         <div {...alvoDaColuna("chegou")} className={classeColuna("chegou", "bg-lateral")}>
           {tituloColuna("Chegou", quadro.chegou.length || "")}
           <p className="px-1 text-[13px] text-suave">
@@ -574,7 +587,9 @@ export default function MeuDia({
 
         <div {...alvoDaColuna("feito")} className={classeColuna("feito", "bg-lateral")}>
           {tituloColuna("Feito hoje", feitos.length || "")}
-          {feitos.length === 0 && <p className="px-1 text-[13px] text-suave">Ainda nada concluído hoje.</p>}
+          <p className="px-1 text-[13px] text-suave">
+            {feitos.length === 0 ? "Ainda nada concluído hoje. " : ""}Arraste qualquer cartão para cá para concluir.
+          </p>
           {feitos.map((item) => (
             <article
               key={item.id}
@@ -586,7 +601,7 @@ export default function MeuDia({
               {item.titulo}
             </article>
           ))}
-          <p className="mt-1 flex justify-between border-t border-linha px-1 pt-2 text-[13px] text-suave">
+          <p className="mt-auto flex justify-between border-t border-linha px-1 pt-2 text-[13px] text-suave">
             Em foco hoje <b className="text-tinta tabular-nums">{formatarDuracao(horas + (foco ? sessao : 0))}</b>
           </p>
         </div>

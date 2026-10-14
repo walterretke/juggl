@@ -25,7 +25,7 @@ interface Props {
 
 /** Texto de cada regra pronta, com o lugar do valor ajustável. */
 const PRONTAS: Record<IdPronta, { antes: string; depois: string; campo: "horas" | "dias" | "itens" | "hora" | null }> = {
-  prazo_chegando: { antes: "Item vence em menos de", depois: "horas (prazo conta até as 18h) e não está em foco.", campo: "horas" },
+  prazo_chegando: { antes: "Item vence em menos de", depois: "horas (prazo conta até as 18h) e não está em foco. Vale para quem não tem prioridade; o aviso de cada prioridade fica em Configurações.", campo: "horas" },
   promessa_esquecida: { antes: "Item prometido a alguém está parado há", depois: "dias ou mais.", campo: "dias" },
   inbox_acumulando: { antes: "A caixa de entrada passou de", depois: "itens sem triagem.", campo: "itens" },
   ritual_pendente: { antes: "O dia não foi planejado até", depois: ".", campo: "hora" },

@@ -1,5 +1,6 @@
 import { dataLocalIso, DIA_MS, descreverPrazo } from "../captura/datas";
 import type { Item } from "../db/itens";
+import type { AvisoPrazo, AvisosPorPrioridade } from "./avisoPrazo";
 
 export type IdPronta =
   | "prazo_chegando"
@@ -52,6 +53,8 @@ export interface Contexto {
   ritualFeito: boolean;
   /** Títulos concluídos hoje, para o resumo do fim do dia. */
   concluidosHoje: string[];
+  /** Antecedência e repetição do Prazo chegando por prioridade; sem prioridade vale a da regra. */
+  avisoPrazo?: AvisosPorPrioridade;
 }
 
 /** Um aviso que uma regra quer dar (ou uma ação que quer tomar), uma vez por `chave`. */
@@ -95,19 +98,30 @@ function fimDeSemana(data: Date): boolean {
 type Avaliador = (regra: Regra, ctx: Contexto) => Omit<Disparo, "regraId" | "urgente" | "acao">[];
 
 const PRONTAS: Record<IdPronta, Avaliador> = {
-  prazo_chegando: (regra, { agora, itens }) =>
+  prazo_chegando: (regra, { agora, itens, avisoPrazo }) =>
     itens
       .filter((i) => i.prazo && i.status !== "em_foco")
-      .filter((i) => {
+      .flatMap((i) => {
+        const aviso: AvisoPrazo = (i.prioridade_id && avisoPrazo?.[i.prioridade_id]) || {
+          horas: regra.condicao.horas ?? 4,
+          repetirHoras: 0,
+        };
         const falta = deIso(i.prazo!, HORA_VENCIMENTO).getTime() - agora.getTime();
-        return falta > 0 && falta <= (regra.condicao.horas ?? 4) * HORA_MS;
-      })
-      .map((i) => ({
-        itemId: i.id,
-        chave: `prazo_chegando:${i.id}:${i.prazo}`,
-        titulo: "Prazo chegando",
-        corpo: `${i.titulo} vence ${descreverPrazo(i.prazo!, agora)} às ${HORA_VENCIMENTO}h${i.pessoa ? ` (pedido de ${i.pessoa})` : ""}.`,
-      })),
+        if (aviso.horas <= 0 || falta <= 0 || falta > aviso.horas * HORA_MS) return [];
+        // Repetindo, cada intervalo até o vencimento ganha uma chave própria (e um aviso).
+        const vez = aviso.repetirHoras > 0 ? `:${Math.floor(falta / (aviso.repetirHoras * HORA_MS))}` : "";
+        const horasFaltando = Math.ceil(falta / HORA_MS);
+        return [
+          {
+            itemId: i.id,
+            chave: `prazo_chegando:${i.id}:${i.prazo}${vez}`,
+            titulo: i.prioridade ? `Prazo chegando · ${i.prioridade}` : "Prazo chegando",
+            corpo: `${i.titulo} vence ${descreverPrazo(i.prazo!, agora)} às ${HORA_VENCIMENTO}h${
+              horasFaltando > 4 ? ` (faltam ${plural(horasFaltando, "hora", "horas")})` : ""
+            }${i.pessoa ? ` (pedido de ${i.pessoa})` : ""}.`,
+          },
+        ];
+      }),
 
   promessa_esquecida: (regra, { agora, itens }) =>
     itens

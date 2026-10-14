@@ -6,6 +6,7 @@ import { backupAgora, listarBackups, restaurarBackup } from "../db/backup";
 import { gravarConfig, lerConfig } from "../db/config";
 import CampoAtalho from "./CampoAtalho";
 import EditorPrioridades from "./EditorPrioridades";
+import SecaoAvisoPrazo from "./SecaoAvisoPrazo";
 import SecaoDevops from "./SecaoDevops";
 import SecaoRecorrentes from "./SecaoRecorrentes";
 import { CHAVE_INATIVIDADE, lerLimiteInatividade } from "../db/foco";
@@ -201,6 +202,9 @@ export default function Configuracoes({ atalho, aoMudarAtalho, atalhoNota, aoMud
 
         <h3 className="mt-7 text-[15px] font-semibold">Prioridades</h3>
         <EditorPrioridades />
+
+        <h3 className="mt-7 text-[15px] font-semibold">Aviso de prazo por prioridade</h3>
+        <SecaoAvisoPrazo />
 
         <h3 className="mt-7 text-[15px] font-semibold">Backup</h3>
         <p className="mt-1 text-sm text-suave">
