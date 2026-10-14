@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Captura from "./telas/Captura";
 import MiniFoco from "./telas/MiniFoco";
+import NotaRapida from "./telas/NotaRapida";
 import Principal from "./telas/Principal";
 import { iniciarTema } from "./tema";
 import "./index.css";
@@ -11,7 +12,7 @@ import "./index.css";
 iniciarTema();
 
 const rotulo = getCurrentWindow().label;
-const Tela = rotulo === "captura" ? Captura : rotulo === "mini" ? MiniFoco : Principal;
+const Tela = rotulo === "captura" ? Captura : rotulo === "nota" ? NotaRapida : rotulo === "mini" ? MiniFoco : Principal;
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

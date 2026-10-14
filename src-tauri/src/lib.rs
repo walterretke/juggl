@@ -25,19 +25,26 @@ const DB_URL: &str = "sqlite:juggl.db";
 /// Rótulos das janelas definidas em tauri.conf.json.
 const JANELA_PRINCIPAL: &str = "main";
 const JANELA_CAPTURA: &str = "captura";
+const JANELA_NOTA: &str = "nota";
 
 /// Argumento de linha de comando que abre a captura (`juggl --captura`). Serve de
 /// alternativa no Linux com Wayland, onde o atalho global pode não funcionar:
 /// basta ligar esse comando a um atalho do próprio GNOME ou KDE.
 const ARG_CAPTURA: &str = "--captura";
+/// Mesma ideia para a nota rápida (`juggl --nota`).
+const ARG_NOTA: &str = "--nota";
 
 /// Subpasta de backups dentro da pasta de dados e quantos arquivos manter.
 const PASTA_BACKUPS: &str = "backups";
 const BACKUPS_MANTIDOS: usize = 7;
 
-/// Atalho global registrado no momento, para poder trocá-lo depois.
+/// Atalho global da captura registrado no momento, para poder trocá-lo depois.
 #[derive(Default)]
 struct AtalhoAtual(Mutex<Option<Shortcut>>);
+
+/// Atalho global da nota rápida registrado no momento.
+#[derive(Default)]
+struct AtalhoNota(Mutex<Option<Shortcut>>);
 
 /// Se o atalho copia o texto selecionado na janela em uso para a descrição.
 /// Ligado por padrão; o front desliga conforme a configuração salva.
@@ -93,6 +100,30 @@ fn migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/0006_refinamento.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 7,
+            description: "tarefas",
+            sql: include_str!("../migrations/0007_tarefas.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 8,
+            description: "agenda_e_anexos",
+            sql: include_str!("../migrations/0008_agenda_e_anexos.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 9,
+            description: "notas",
+            sql: include_str!("../migrations/0009_notas.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 10,
+            description: "foco_cancelado",
+            sql: include_str!("../migrations/0010_foco_cancelado.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
@@ -103,7 +134,7 @@ fn agora_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// Enviado ao front quando a captura abre.
+/// Enviado ao front quando a captura ou a nota rápida abre.
 #[derive(Clone, Serialize)]
 struct CapturaAberta {
     /// Momento do atalho, para medir a meta de 3 segundos.
@@ -114,27 +145,33 @@ struct CapturaAberta {
 
 /// Mostra a captura sobre qualquer janela.
 fn mostrar_captura(app: &AppHandle) {
-    abrir_captura_com(app, agora_ms(), None);
+    abrir_janela_rapida(app, JANELA_CAPTURA, agora_ms(), None);
 }
 
-fn abrir_captura_com(app: &AppHandle, momento: u64, selecao: Option<String>) {
-    if let Some(janela) = app.get_webview_window(JANELA_CAPTURA) {
+/// Mostra a nota rápida sobre qualquer janela.
+fn mostrar_nota(app: &AppHandle) {
+    abrir_janela_rapida(app, JANELA_NOTA, agora_ms(), None);
+}
+
+/// Mostra a captura ou a nota rápida e avisa o front ("captura:aberta" ou "nota:aberta").
+fn abrir_janela_rapida(app: &AppHandle, rotulo: &str, momento: u64, selecao: Option<String>) {
+    if let Some(janela) = app.get_webview_window(rotulo) {
         let _ = janela.center();
         let _ = janela.show();
         let _ = janela.set_focus();
-        let _ = janela.emit("captura:aberta", CapturaAberta { momento, selecao });
+        let _ = janela.emit(&format!("{rotulo}:aberta"), CapturaAberta { momento, selecao });
     }
 }
 
-/// Pelo atalho global: antes de mostrar a captura, copia o que estiver selecionado
+/// Pelo atalho global: antes de mostrar a captura (ou a nota), copia o que estiver selecionado
 /// na janela em uso. Com a cópia ligada, espera a tecla ser solta: no Linux (X11) o
 /// atalho prende o teclado enquanto está apertado e a janela em uso não receberia o
 /// comando de copiar. Roda fora da thread principal porque espera a cópia.
-fn capturar_pelo_atalho(app: &AppHandle, estado: ShortcutState) {
+fn capturar_pelo_atalho(app: &AppHandle, rotulo: &'static str, estado: ShortcutState) {
     let usar_selecao = app.state::<UsarSelecao>().0.load(Ordering::Relaxed);
     if !usar_selecao {
         if estado == ShortcutState::Pressed {
-            abrir_captura_com(app, agora_ms(), None);
+            abrir_janela_rapida(app, rotulo, agora_ms(), None);
         }
         return;
     }
@@ -145,7 +182,7 @@ fn capturar_pelo_atalho(app: &AppHandle, estado: ShortcutState) {
     let app = app.clone();
     thread::spawn(move || {
         let selecao = copiar_selecao(&app);
-        abrir_captura_com(&app, momento, selecao);
+        abrir_janela_rapida(&app, rotulo, momento, selecao);
     });
 }
 
@@ -231,6 +268,67 @@ fn salvar_csv(app: AppHandle, nome: String, conteudo: String) -> Result<String, 
     Ok(caminho.to_string_lossy().into_owned())
 }
 
+/// Nome de arquivo seguro para gravar no disco: sem pastas nem caracteres proibidos no Windows.
+fn nome_seguro(nome: &str) -> String {
+    let limpo: String = nome
+        .chars()
+        .map(|c| if matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') || c.is_control() { '_' } else { c })
+        .collect();
+    let limpo = limpo.trim().trim_matches('.').to_string();
+    if limpo.is_empty() { "anexo".to_string() } else { limpo }
+}
+
+/// Primeiro caminho livre na pasta: "nome.pdf", "nome (2).pdf", "nome (3).pdf"...
+fn caminho_livre(pasta: &std::path::Path, nome: &str) -> PathBuf {
+    let caminho = pasta.join(nome);
+    if !caminho.exists() {
+        return caminho;
+    }
+    let (base, ext) = match nome.rfind('.') {
+        Some(i) if i > 0 => (&nome[..i], &nome[i..]),
+        _ => (nome, ""),
+    };
+    (2..)
+        .map(|n| pasta.join(format!("{base} ({n}){ext}")))
+        .find(|c| !c.exists())
+        .expect("sempre há um nome livre")
+}
+
+fn decodificar_anexo(dados: &str) -> Result<Vec<u8>, String> {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD
+        .decode(dados)
+        .map_err(|e| format!("Anexo corrompido: {e}"))
+}
+
+/// Abre um anexo no programa padrão do sistema: grava uma cópia na pasta temporária do Juggl.
+#[tauri::command]
+fn abrir_anexo(app: AppHandle, nome: String, dados: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let bytes = decodificar_anexo(&dados)?;
+    let pasta = std::env::temp_dir().join("juggl-anexos");
+    fs::create_dir_all(&pasta).map_err(|e| format!("Não consegui criar {}: {e}", pasta.display()))?;
+    let caminho = pasta.join(nome_seguro(&nome));
+    fs::write(&caminho, bytes).map_err(|e| format!("Não consegui gravar {}: {e}", caminho.display()))?;
+    app.opener()
+        .open_path(caminho.to_string_lossy(), None::<&str>)
+        .map_err(|e| format!("Não consegui abrir {}: {e}", caminho.display()))
+}
+
+/// Grava um anexo na pasta Downloads (sem sobrescrever) e devolve o caminho.
+#[tauri::command]
+fn salvar_anexo(app: AppHandle, nome: String, dados: String) -> Result<String, String> {
+    let bytes = decodificar_anexo(&dados)?;
+    let pasta = app
+        .path()
+        .download_dir()
+        .or_else(|_| app.path().home_dir())
+        .map_err(|_| "Não encontrei a pasta Downloads nem a pasta pessoal.".to_string())?;
+    let caminho = caminho_livre(&pasta, &nome_seguro(&nome));
+    fs::write(&caminho, bytes).map_err(|e| format!("Não foi possível gravar {}: {e}", caminho.display()))?;
+    Ok(caminho.to_string_lossy().into_owned())
+}
+
 /// Liga ou desliga o uso do texto selecionado (configuração salva no banco).
 #[tauri::command]
 fn definir_usar_selecao(estado: State<UsarSelecao>, usar: bool) {
@@ -250,12 +348,16 @@ fn abrir_captura(app: AppHandle) {
     mostrar_captura(&app);
 }
 
-/// Esconde a captura. Com `devolver_foco` (Enter ou Esc), o foco volta à janela que
-/// estava em uso: no Windows e no Linux isso acontece ao esconder; no macOS é preciso
-/// esconder o app inteiro. Na perda de foco o usuário já está em outra janela.
 #[tauri::command]
-fn esconder_captura(app: AppHandle, devolver_foco: bool) {
-    if let Some(janela) = app.get_webview_window(JANELA_CAPTURA) {
+fn abrir_nota(app: AppHandle) {
+    mostrar_nota(&app);
+}
+
+/// Esconde a captura ou a nota rápida. Com `devolver_foco` (Enter ou Esc), o foco volta à
+/// janela que estava em uso: no Windows e no Linux isso acontece ao esconder; no macOS é
+/// preciso esconder o app inteiro. Na perda de foco o usuário já está em outra janela.
+fn esconder_janela_rapida(app: &AppHandle, rotulo: &str, devolver_foco: bool) {
+    if let Some(janela) = app.get_webview_window(rotulo) {
         let _ = janela.hide();
     }
     #[cfg(target_os = "macos")]
@@ -266,20 +368,35 @@ fn esconder_captura(app: AppHandle, devolver_foco: bool) {
     let _ = devolver_foco;
 }
 
-/// Registra o atalho global da captura (ex.: "Ctrl+Shift+Space"), trocando o anterior.
-/// Devolve erro legível se o atalho for inválido ou já estiver em uso por outro app.
 #[tauri::command]
-fn definir_atalho(
-    app: AppHandle,
-    estado: State<AtalhoAtual>,
-    atalho: String,
+fn esconder_captura(app: AppHandle, devolver_foco: bool) {
+    esconder_janela_rapida(&app, JANELA_CAPTURA, devolver_foco);
+}
+
+#[tauri::command]
+fn esconder_nota(app: AppHandle, devolver_foco: bool) {
+    esconder_janela_rapida(&app, JANELA_NOTA, devolver_foco);
+}
+
+/// Registra um atalho global no lugar de `atual`, soltando o anterior. Não deixa usar o
+/// mesmo atalho de `outro` (captura e nota precisam de combinações diferentes).
+fn trocar_atalho(
+    app: &AppHandle,
+    atual: &Mutex<Option<Shortcut>>,
+    outro: &Mutex<Option<Shortcut>>,
+    atalho: &str,
 ) -> Result<(), String> {
     let novo: Shortcut = atalho
         .parse()
         .map_err(|e| format!("Atalho inválido \"{atalho}\": {e}"))?;
-    let mut atual = estado.0.lock().map_err(|e| e.to_string())?;
+    // Lê o outro antes de travar o atual: travar os dois juntos, em ordens diferentes, poderia travar o app.
+    let do_outro = *outro.lock().map_err(|e| e.to_string())?;
+    let mut atual = atual.lock().map_err(|e| e.to_string())?;
     if *atual == Some(novo) {
         return Ok(());
+    }
+    if do_outro == Some(novo) {
+        return Err(format!("{atalho} já é o atalho da nova tarefa ou da nota. Escolha outra combinação."));
     }
     let atalhos = app.global_shortcut();
     atalhos
@@ -289,6 +406,44 @@ fn definir_atalho(
         let _ = atalhos.unregister(antigo);
     }
     Ok(())
+}
+
+/// Registra o atalho global da captura (ex.: "Ctrl+Shift+Space"), trocando o anterior.
+/// Devolve erro legível se o atalho for inválido ou já estiver em uso por outro app.
+#[tauri::command]
+fn definir_atalho(
+    app: AppHandle,
+    estado: State<AtalhoAtual>,
+    nota: State<AtalhoNota>,
+    atalho: String,
+) -> Result<(), String> {
+    trocar_atalho(&app, &estado.0, &nota.0, &atalho)
+}
+
+/// Registra o atalho global da nota rápida (ex.: "Ctrl+Alt+Space"), trocando o anterior.
+#[tauri::command]
+fn definir_atalho_nota(
+    app: AppHandle,
+    estado: State<AtalhoNota>,
+    captura: State<AtalhoAtual>,
+    atalho: String,
+) -> Result<(), String> {
+    trocar_atalho(&app, &estado.0, &captura.0, &atalho)
+}
+
+/// A janela que o atalho apertado abre: a nota, se for o atalho dela; senão, a captura.
+fn janela_do_atalho(app: &AppHandle, atalho: &Shortcut) -> &'static str {
+    let da_nota = app
+        .state::<AtalhoNota>()
+        .0
+        .lock()
+        .map(|nota| *nota == Some(*atalho))
+        .unwrap_or(false);
+    if da_nota {
+        JANELA_NOTA
+    } else {
+        JANELA_CAPTURA
+    }
 }
 
 fn pasta_backups(app: &AppHandle) -> Result<PathBuf, String> {
@@ -351,12 +506,13 @@ fn atualizar_bandeja(app: AppHandle, menu: State<MenuFoco>, foco: Option<String>
 
 fn criar_bandeja(app: &tauri::App) -> tauri::Result<()> {
     let foco = MenuItem::with_id(app, "foco", SEM_FOCO, false, None::<&str>)?;
-    let pausar = MenuItem::with_id(app, "pausar", "Pausar", false, None::<&str>)?;
+    let pausar = MenuItem::with_id(app, "pausar", "Parar timer", false, None::<&str>)?;
     let separador = PredefinedMenuItem::separator(app)?;
-    let capturar = MenuItem::with_id(app, "capturar", "Capturar", true, None::<&str>)?;
+    let capturar = MenuItem::with_id(app, "capturar", "Nova tarefa", true, None::<&str>)?;
+    let anotar = MenuItem::with_id(app, "nota", "Nova nota", true, None::<&str>)?;
     let abrir = MenuItem::with_id(app, "abrir", "Abrir o Juggl", true, None::<&str>)?;
     let sair = MenuItem::with_id(app, "sair", "Sair", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&foco, &pausar, &separador, &capturar, &abrir, &sair])?;
+    let menu = Menu::with_items(app, &[&foco, &pausar, &separador, &capturar, &anotar, &abrir, &sair])?;
     app.manage(MenuFoco { foco, pausar });
 
     let mut bandeja = TrayIconBuilder::with_id("juggl")
@@ -365,6 +521,7 @@ fn criar_bandeja(app: &tauri::App) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, evento| match evento.id().as_ref() {
             "capturar" => mostrar_captura(app),
+            "nota" => mostrar_nota(app),
             // Quem pausa é o front, que grava a sessão no banco.
             "pausar" => {
                 let _ = app.emit_to(JANELA_PRINCIPAL, "bandeja:pausar", ());
@@ -398,6 +555,8 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if args.iter().any(|a| a == ARG_CAPTURA) {
                 mostrar_captura(app);
+            } else if args.iter().any(|a| a == ARG_NOTA) {
+                mostrar_nota(app);
             } else {
                 mostrar_principal(app);
             }
@@ -409,8 +568,8 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _atalho, evento| {
-                    capturar_pelo_atalho(app, evento.state());
+                .with_handler(|app, atalho, evento| {
+                    capturar_pelo_atalho(app, janela_do_atalho(app, atalho), evento.state());
                 })
                 .build(),
         )
@@ -420,11 +579,14 @@ pub fn run() {
                 .build(),
         )
         .manage(AtalhoAtual::default())
+        .manage(AtalhoNota::default())
         .manage(UsarSelecao(AtomicBool::new(true)))
         .setup(|app| {
             criar_bandeja(app)?;
             if std::env::args().any(|a| a == ARG_CAPTURA) {
                 mostrar_captura(app.handle());
+            } else if std::env::args().any(|a| a == ARG_NOTA) {
+                mostrar_nota(app.handle());
             }
             Ok(())
         })
@@ -442,12 +604,17 @@ pub fn run() {
             abrir_captura,
             esconder_captura,
             definir_atalho,
+            abrir_nota,
+            esconder_nota,
+            definir_atalho_nota,
             caminho_backup,
             limpar_backups,
             atualizar_bandeja,
             definir_usar_selecao,
             tempo_ocioso,
             salvar_csv,
+            abrir_anexo,
+            salvar_anexo,
             devops::devops_salvar_token,
             devops::devops_apagar_token,
             devops::devops_tem_token,

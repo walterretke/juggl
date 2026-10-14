@@ -11,10 +11,13 @@ import SecaoRecorrentes from "./SecaoRecorrentes";
 import { CHAVE_INATIVIDADE, lerLimiteInatividade } from "../db/foco";
 import { rotuloAtalho } from "./origens";
 import { escolherTema, lerTema, NOME_TEMA, type Tema } from "../tema";
+import { gravarOverlayAoFocar, lerOverlayAoFocar } from "../sons/preferencias";
 
 interface Props {
   atalho: string;
   aoMudarAtalho: (atalho: string) => void;
+  atalhoNota: string;
+  aoMudarAtalhoNota: (atalho: string) => void;
   aoSincronizarDevops: () => Promise<void>;
   /** Procura versão nova; devolve a mensagem para mostrar. */
   aoProcurarAtualizacao: () => Promise<string>;
@@ -23,7 +26,7 @@ interface Props {
   aoFechar: () => void;
 }
 
-export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevops, aoProcurarAtualizacao, aoReverBoasVindas, aoFechar }: Props) {
+export default function Configuracoes({ atalho, aoMudarAtalho, atalhoNota, aoMudarAtalhoNota, aoSincronizarDevops, aoProcurarAtualizacao, aoReverBoasVindas, aoFechar }: Props) {
   const [versao, setVersao] = useState("");
   const [mensagemVersao, setMensagemVersao] = useState<string | null>(null);
   const [gravando, setGravando] = useState(false);
@@ -35,12 +38,14 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevo
   const [tema, setTema] = useState<Tema | null>(null);
   const [usarSelecao, setUsarSelecao] = useState(true);
   const [inatividade, setInatividade] = useState("");
+  const [overlayAoFocar, setOverlayAoFocar] = useState(true);
 
   useEffect(() => {
     lerTema().then(setTema);
     getVersion().then(setVersao);
     lerConfig("usar_selecao").then((v) => setUsarSelecao(v !== "nao"));
     lerLimiteInatividade().then((m) => setInatividade(String(m)));
+    lerOverlayAoFocar().then(setOverlayAoFocar);
   }, []);
 
   async function trocarUsarSelecao(usar: boolean) {
@@ -121,7 +126,7 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevo
           ))}
         </div>
 
-        <h3 className="mt-7 text-[15px] font-semibold">Atalho da captura</h3>
+        <h3 className="mt-7 text-[15px] font-semibold">Atalho da nova tarefa</h3>
         <p className="mt-1 text-sm text-suave">
           Atual: <strong>{rotuloAtalho(atalho)}</strong>. Clique no campo e aperte a combinação nova.
         </p>
@@ -142,6 +147,13 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevo
             </span>
           </span>
         </label>
+
+        <h3 className="mt-7 text-[15px] font-semibold">Atalho da nota</h3>
+        <p className="mt-1 text-sm text-suave">
+          Atual: <strong>{rotuloAtalho(atalhoNota)}</strong>. Abre uma nota rápida para não esquecer algo, com lembrete
+          de tempos em tempos.
+        </p>
+        <CampoAtalho atalho={atalhoNota} aoMudarAtalho={aoMudarAtalhoNota} aoGravar={setGravando} qual="nota" />
 
         <h3 className="mt-7 text-[15px] font-semibold">Foco</h3>
         <label className="mt-2 flex flex-wrap items-center gap-2 text-sm">
@@ -165,6 +177,21 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevo
           O tempo parado não entra nas horas. Use 0 para desligar. No Linux com Wayland o sistema não informa a
           inatividade.
         </p>
+        <label className="mt-3 flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={overlayAoFocar}
+            onChange={(e) => {
+              setOverlayAoFocar(e.target.checked);
+              gravarOverlayAoFocar(e.target.checked);
+            }}
+            className="mt-0.5 accent-destaque"
+          />
+          <span>
+            Abrir o overlay no canto da tela quando um foco começar
+            <span className="block text-suave">Uma faixa discreta com o tempo, pausar e finalizar, sempre por cima.</span>
+          </span>
+        </label>
 
         <h3 className="mt-7 text-[15px] font-semibold">Azure DevOps</h3>
         <SecaoDevops aoSincronizar={aoSincronizarDevops} />

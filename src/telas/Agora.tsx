@@ -4,6 +4,8 @@ import type { Foco } from "../db/foco";
 import type { Item } from "../db/itens";
 import { NOME_QUANDO } from "../ritual/quadro";
 import { COR_ORIGEM, NOME_ORIGEM } from "./origens";
+import TextoFormatado from "./TextoFormatado";
+import SeletorSom from "./SeletorSom";
 
 interface Props {
   foco: Foco | null;
@@ -14,14 +16,19 @@ interface Props {
   doDia: boolean;
   aoFocar: (item: Item) => void;
   aoPausar: () => void;
+  /** Cancela o foco sem contar o tempo (pede confirmação). */
+  aoCancelarFoco: () => void;
   aoConcluir: () => void;
   aoCobrar: () => void;
   aoPlanejar: () => void;
-  aoMudarNota: (nota: string | null) => void;
+  /** Abre a tarefa em foco no editor (D). */
+  aoEditar: () => void;
+  /** Som do foco: escolha, o que está tocando e liga/desliga. */
+  som: React.ComponentProps<typeof SeletorSom>;
   aoAbrirMini: () => void;
 }
 
-/** Tela "Agora": uma única coisa em destaque, o timer e as 3 de hoje (ou sugestões, sem plano). */
+/** Tela "Agora": uma única coisa em destaque, o timer e as próximas de hoje (ou sugestões, sem plano). */
 export default function Agora({
   foco,
   proximas,
@@ -29,37 +36,28 @@ export default function Agora({
   doDia,
   aoFocar,
   aoPausar,
+  aoCancelarFoco,
   aoConcluir,
   aoCobrar,
   aoPlanejar,
-  aoMudarNota,
+  aoEditar,
   aoAbrirMini,
+  som,
 }: Props) {
   const [agora, setAgora] = useState(() => Date.now());
-  /** Texto da descrição sendo editado (null: não está editando). */
-  const [nota, setNota] = useState<string | null>(null);
 
-  useEffect(() => setNota(null), [foco?.item.id]);
-
-  // D edita a descrição do item em foco.
+  // D abre a tarefa em foco para editar.
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
-      if (!foco || nota !== null || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.target instanceof HTMLElement && e.target.closest("input, textarea")) return;
+      if (!foco || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.target instanceof HTMLElement && e.target.closest("input, textarea, [contenteditable]")) return;
       if (e.key.toLowerCase() !== "d") return;
       e.preventDefault();
-      setNota(foco.item.nota ?? "");
+      aoEditar();
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [foco, nota]);
-
-  function salvarNota() {
-    if (nota === null || !foco) return;
-    const nova = nota.trim() || null;
-    setNota(null);
-    if (nova !== foco.item.nota) aoMudarNota(nova);
-  }
+  }, [foco, aoEditar]);
 
   useEffect(() => {
     if (!foco) return;
@@ -82,34 +80,20 @@ export default function Agora({
           <p className="text-xs font-semibold uppercase tracking-wider text-destaque">Fazendo agora</p>
           <h2 className="mt-2 font-titulo text-[28px] font-medium leading-tight tracking-tight">{foco.item.titulo}</h2>
           {meta.length > 0 && <p className="mt-1 text-[15px] text-suave">{meta.join(" · ")}</p>}
-          {nota !== null ? (
-            <textarea
-              autoFocus
-              rows={Math.min(Math.max(nota.split("\n").length, 3), 10)}
-              value={nota}
-              onChange={(e) => setNota(e.target.value)}
-              onBlur={salvarNota}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  setNota(null);
-                } else if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  salvarNota();
-                }
-              }}
-              placeholder="Detalhes, a mensagem recebida, links... (Enter salva, Shift+Enter quebra a linha)"
-              className="mt-3 w-full resize-y rounded-lg border border-destaque bg-folha px-3 py-2 text-[15px] leading-relaxed outline-none"
-            />
-          ) : foco.item.nota ? (
-            <p
+          {foco.item.nota && (
+            <div
               title="Dois cliques para editar (D)"
-              onDoubleClick={() => setNota(foco.item.nota ?? "")}
-              className="mt-3 max-h-40 overflow-y-auto whitespace-pre-wrap text-[15px] leading-relaxed text-tinta-2 select-text"
+              onDoubleClick={aoEditar}
+              className="mt-3 max-h-48 overflow-y-auto text-[15px] leading-relaxed text-tinta-2 select-text"
             >
-              {foco.item.nota}
+              <TextoFormatado texto={foco.item.nota} />
+            </div>
+          )}
+          {foco.item.subtarefas > 0 && (
+            <p className="mt-2 text-sm text-suave">
+              Checklist: {foco.item.subtarefas_feitas} de {foco.item.subtarefas} feitos
             </p>
-          ) : null}
+          )}
           {(cobranca || promessa) && (
             <p className="mt-1 text-sm font-semibold text-atraso">{[cobranca, promessa].filter(Boolean).join(" · ")}</p>
           )}
@@ -125,23 +109,33 @@ export default function Agora({
             <button
               type="button"
               onClick={aoPausar}
-              className="rounded-lg border border-linha px-4 py-2 text-sm font-semibold hover:bg-etiqueta"
+              title="Para o timer. A tarefa continua aberta."
+              className="rounded-lg bg-destaque px-4 py-2 text-sm font-semibold text-folha hover:opacity-90"
             >
-              Pausar <kbd className="ml-1 font-sans font-normal text-apagado">P</kbd>
+              Parar timer <kbd className="ml-1 font-sans font-normal opacity-70">P</kbd>
             </button>
             <button
               type="button"
               onClick={aoConcluir}
-              className="rounded-lg bg-destaque px-4 py-2 text-sm font-semibold text-folha hover:opacity-90"
+              title="Para o timer e fecha a tarefa (Z desfaz)"
+              className="rounded-lg border border-linha px-4 py-2 text-sm font-semibold hover:bg-etiqueta"
             >
-              Concluir <kbd className="ml-1 font-sans font-normal opacity-70">X</kbd>
+              Concluir tarefa <kbd className="ml-1 font-sans font-normal text-apagado">X</kbd>
             </button>
             <button
               type="button"
-              onClick={() => setNota(foco.item.nota ?? "")}
+              onClick={aoCancelarFoco}
+              title="Encerra a sessão sem contar o tempo nas horas"
               className="rounded-lg px-4 py-2 text-sm text-suave hover:bg-etiqueta hover:text-tinta"
             >
-              {foco.item.nota ? "Editar descrição" : "Descrição"} <kbd className="ml-1 font-sans font-normal text-apagado">D</kbd>
+              Cancelar foco <kbd className="ml-1 font-sans font-normal text-apagado">Del</kbd>
+            </button>
+            <button
+              type="button"
+              onClick={aoEditar}
+              className="rounded-lg px-4 py-2 text-sm text-suave hover:bg-etiqueta hover:text-tinta"
+            >
+              Editar tarefa <kbd className="ml-1 font-sans font-normal text-apagado">D</kbd>
             </button>
             <button
               type="button"
@@ -154,11 +148,14 @@ export default function Agora({
             <button
               type="button"
               onClick={aoAbrirMini}
-              title="Uma faixa sempre por cima das outras janelas, com o foco e o timer"
+              title="Uma faixa discreta no canto da tela, sempre por cima, com a tarefa, o timer, pausar e finalizar"
               className="rounded-lg px-4 py-2 text-sm text-suave hover:bg-etiqueta hover:text-tinta"
             >
-              Mini-janela
+              Overlay no canto
             </button>
+          </div>
+          <div className="mt-3">
+            <SeletorSom {...som} />
           </div>
         </section>
       ) : (
@@ -180,7 +177,7 @@ export default function Agora({
       )}
 
       <div className="mt-9 mb-3 flex items-baseline gap-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-apagado">{doDia ? "Suas 3 de hoje" : "Sugestões"}</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-apagado">{doDia ? "Próximas de hoje" : "Sugestões"}</h2>
         {!doDia && proximas.length > 0 && (
           <button type="button" onClick={aoPlanejar} className="text-[13px] font-semibold text-destaque hover:underline">
             Planejar o dia

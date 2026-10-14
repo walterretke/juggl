@@ -251,7 +251,7 @@ export default function Regras({ aoAvisar }: Props) {
           </p>
           <p className="text-[13px] text-suave">
             Avisa quando outro item fica bem mais urgente que o foco. Pontos: prazo (atrasado 50, hoje 40, amanhã 25, esta semana
-            10), 15 por cobrança até 45, 2 por dia parado até 20, prioridade (a última 0, a penúltima 10, as de cima 20) e 15 se é uma das 3 do dia. Avisa com
+            10), 15 por cobrança até 45, 2 por dia parado até 20, prioridade (a última 0, a penúltima 10, as de cima 20) e 15 se está em Hoje. Avisa com
             30 pontos de diferença, ou quando uma cobrança ou prazo novo faz outro passar à frente.
           </p>
         </div>

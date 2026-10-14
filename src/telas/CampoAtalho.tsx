@@ -9,10 +9,15 @@ interface Props {
   aoMudarAtalho: (atalho: string) => void;
   /** Avisa enquanto o campo espera as teclas (o Esc ali cancela a gravação, não fecha a janela). */
   aoGravar?: (gravando: boolean) => void;
+  /** Qual atalho: o da captura (nova tarefa) ou o da nota rápida. */
+  qual?: "captura" | "nota";
 }
 
+const COMANDO = { captura: "definir_atalho", nota: "definir_atalho_nota" } as const;
+const CHAVE = { captura: "atalho", nota: "atalho_nota" } as const;
+
 /** Campo que grava a combinação nova do atalho global da captura. */
-export default function CampoAtalho({ atalho, aoMudarAtalho, aoGravar }: Props) {
+export default function CampoAtalho({ atalho, aoMudarAtalho, aoGravar, qual = "captura" }: Props) {
   const [gravando, setGravandoLocal] = useState(false);
   const [novoAtalho, setNovoAtalho] = useState<string | null>(null);
   const [mensagem, setMensagem] = useState<{ ok: boolean; texto: string } | null>(null);
@@ -25,8 +30,8 @@ export default function CampoAtalho({ atalho, aoMudarAtalho, aoGravar }: Props) 
   async function salvar() {
     if (!novoAtalho) return;
     try {
-      await invoke("definir_atalho", { atalho: novoAtalho });
-      await gravarConfig("atalho", novoAtalho);
+      await invoke(COMANDO[qual], { atalho: novoAtalho });
+      await gravarConfig(CHAVE[qual], novoAtalho);
       aoMudarAtalho(novoAtalho);
       setMensagem({ ok: true, texto: `Atalho trocado para ${rotuloAtalho(novoAtalho)}.` });
       setNovoAtalho(null);
@@ -40,7 +45,7 @@ export default function CampoAtalho({ atalho, aoMudarAtalho, aoGravar }: Props) 
       <div className="mt-2 flex gap-2">
         <input
           readOnly
-          aria-label="Atalho da captura"
+          aria-label={qual === "nota" ? "Atalho da nota" : "Atalho da nova tarefa"}
           value={gravando ? (novoAtalho ? rotuloAtalho(novoAtalho) : "Aperte as teclas…") : rotuloAtalho(novoAtalho ?? atalho)}
           onFocus={() => {
             setGravando(true);

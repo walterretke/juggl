@@ -4,8 +4,6 @@ import { gravarConfig, lerConfig } from "./config";
 import { diaUtilAnterior, type DadosDaily } from "../dia/daily";
 import { alterarItem, concluidosEntre, gravarCampos, listarItens, SELECT_ITEM, type Item } from "./itens";
 
-/** Quantos itens cabem em Hoje (as 3 do dia). */
-export const MAX_DO_DIA = 3;
 /** Hora a partir da qual o app lembra que o dia não foi planejado. */
 export const HORA_LEMBRETE_RITUAL = 10;
 

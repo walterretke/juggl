@@ -1,42 +1,36 @@
-import { useLayoutEffect, useRef } from "react";
-
-const MAX_LINHAS = 6;
+import TextoRico from "../TextoRico";
 
 interface Props {
   valor: string;
   aoMudar: (valor: string) => void;
+  /** Texto de ajuda no campo vazio. */
+  dica?: string;
+  /** Na nova tarefa Enter salva; no editor da tarefa Enter quebra a linha e Ctrl+Enter salva. */
+  modo?: "captura" | "editor";
+  aoSalvar?: () => void;
 }
 
-/** Descrição do pedido: várias linhas (Shift+Enter quebra a linha, Enter salva). Cresce até 6 linhas. */
-export default function CampoDescricao({ valor, aoMudar }: Props) {
-  const campo = useRef<HTMLTextAreaElement>(null);
-
-  useLayoutEffect(() => {
-    const el = campo.current;
-    if (!el) return;
-    // Vazio fica com uma linha; medir o placeholder quebrado daria uma caixa enorme.
-    if (!valor) {
-      el.style.height = "";
-      return;
-    }
-    el.style.height = "auto";
-    const linha = parseFloat(getComputedStyle(el).lineHeight) || 20;
-    el.style.height = `${Math.min(el.scrollHeight, linha * MAX_LINHAS + 12)}px`;
-  }, [valor]);
-
+/** Descrição da tarefa, com negrito, itálico e listas. */
+export default function CampoDescricao({
+  valor,
+  aoMudar,
+  dica = "Detalhes ou a mensagem recebida (opcional)",
+  modo = "captura",
+  aoSalvar,
+}: Props) {
   return (
     <div>
       <label htmlFor="captura-nota" className="block text-xs font-semibold text-suave">
         Descrição
       </label>
-      <textarea
+      <TextoRico
         id="captura-nota"
-        ref={campo}
-        rows={1}
-        value={valor}
-        onChange={(e) => aoMudar(e.target.value)}
-        placeholder="Detalhes ou a mensagem recebida (opcional). Shift+Enter quebra a linha."
-        className="mt-1 w-full resize-none rounded-lg border border-linha bg-cartao px-3 py-1.5 text-sm leading-5 outline-none placeholder:text-apagado focus:border-destaque"
+        valor={valor}
+        aoMudar={aoMudar}
+        dica={dica}
+        modo={modo}
+        aoSalvar={aoSalvar}
+        alturaInicial={modo === "editor" ? "12rem" : "7rem"}
       />
     </div>
   );
