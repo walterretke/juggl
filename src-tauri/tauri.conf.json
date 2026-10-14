@@ -34,6 +34,21 @@
         "center": true,
         "focus": true,
         "shadow": true
+      },
+      {
+        "label": "nota",
+        "title": "Juggl: nota",
+        "url": "index.html",
+        "width": 560,
+        "height": 64,
+        "visible": false,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": true,
+        "center": true,
+        "focus": true,
+        "shadow": true
       }
     ],
     "security": {

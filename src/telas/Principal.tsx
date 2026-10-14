@@ -70,6 +70,9 @@ import Pessoas from "./Pessoas";
 import Regras from "./Regras";
 import MeuDia from "./MeuDia";
 import EditorTarefa from "./EditorTarefa";
+import Notas from "./Notas";
+import { contarNotasAtivas, lerAtalhoNota, virarTarefa, ATALHO_NOTA_PADRAO, type Nota } from "../db/notas";
+import { avisarNotas } from "../notas/avisar";
 import Fechadas from "./Fechadas";
 import Agenda from "./agenda/Agenda";
 import { destinoAoRestaurar, NOME_LISTA } from "../tarefas/restaurar";
@@ -79,15 +82,15 @@ const MINUTO_MS = 60 * 1000;
 const MAX_DESFAZER = 30;
 
 /** Telas da janela principal: Meu dia (o fluxo do dia), Agora (o foco), as listas, Pessoas e Horas. */
-type Tela = "dia" | "agenda" | "agora" | Lista | "fechadas" | "pessoas" | "horas" | "regras" | "uso";
-const TELAS: Tela[] = ["dia", "agenda", "agora", "inbox", "a_fazer", "aguardando", "fechadas", "pessoas", "horas", "regras", "uso"];
+type Tela = "dia" | "agenda" | "agora" | Lista | "notas" | "fechadas" | "pessoas" | "horas" | "regras" | "uso";
+const TELAS: Tela[] = ["dia", "agenda", "agora", "inbox", "a_fazer", "aguardando", "notas", "fechadas", "pessoas", "horas", "regras", "uso"];
 /**
  * Grupos da barra lateral; Regras e Uso ficam no rodapé, junto das configurações.
  * Agora não tem botão próprio: o cartão "Em foco", logo abaixo de Meu dia, leva até ele.
  */
 const GRUPOS_MENU: { titulo: string; telas: Tela[] }[] = [
   { titulo: "Hoje", telas: ["dia", "agenda"] },
-  { titulo: "Listas", telas: ["inbox", "a_fazer", "aguardando", "fechadas"] },
+  { titulo: "Listas", telas: ["inbox", "a_fazer", "aguardando", "notas", "fechadas"] },
   { titulo: "Acompanhar", telas: ["pessoas", "horas"] },
 ];
 const NOME_TELA: Record<Tela, string> = {
@@ -97,6 +100,7 @@ const NOME_TELA: Record<Tela, string> = {
   inbox: "Caixa de entrada",
   a_fazer: "A fazer",
   aguardando: "Aguardando",
+  notas: "Notas",
   fechadas: "Fechadas",
   pessoas: "Pessoas",
   horas: "Horas da semana",
@@ -175,6 +179,10 @@ export default function Principal() {
   const [alvoArrasto, setAlvoArrasto] = useState<Tela | null>(null);
   const [atalho, setAtalho] = useState(ATALHO_PADRAO);
   const [avisoAtalho, setAvisoAtalho] = useState<string | null>(null);
+  const [atalhoNota, setAtalhoNota] = useState(ATALHO_NOTA_PADRAO);
+  const [avisoAtalhoNota, setAvisoAtalhoNota] = useState<string | null>(null);
+  /** Notas que ainda avisam, para a contagem na barra lateral. */
+  const [notasAtivas, setNotasAtivas] = useState(0);
   const [erro, setErro] = useState<string | null>(null);
   const [agora, setAgora] = useState(() => new Date());
   const [prioridades, setPrioridades] = useState<Prioridade[]>([]);
@@ -219,6 +227,9 @@ export default function Principal() {
         ritualFeitoHoje(),
       ]);
       setRitualFeito(feito);
+      contarNotasAtivas()
+        .then(setNotasAtivas)
+        .catch(() => {});
       lerConfigDevops()
         .then((cfg) => setDevopsAtivo(cfg.ligado && !!cfg.organizacao))
         .catch(() => {});
@@ -273,6 +284,17 @@ export default function Principal() {
       .catch((e) => setAvisoAtalho(String(e)));
   }, []);
 
+  // E o da nota rápida.
+  useEffect(() => {
+    lerAtalhoNota()
+      .then(async (escolhido) => {
+        setAtalhoNota(escolhido);
+        await invoke("definir_atalho_nota", { atalho: escolhido });
+        setAvisoAtalhoNota(null);
+      })
+      .catch((e) => setAvisoAtalhoNota(String(e)));
+  }, []);
+
   // Usar o texto selecionado na captura: ligado, a menos que tenha sido desligado.
   useEffect(() => {
     lerConfig("usar_selecao")
@@ -313,6 +335,11 @@ export default function Principal() {
         if (recorrentes.length > 0)
           mostrarAviso(recorrentes.length === 1 ? `Recorrente na caixa de entrada: ${recorrentes[0]}` : `${recorrentes.length} recorrentes na caixa de entrada.`);
       }
+      avisarNotas()
+        .then((avisadas) => {
+          if (avisadas > 0) setVersao((v) => v + 1);
+        })
+        .catch((e) => console.error("Notas:", e));
       verificarRegras()
         .then((marcados) => {
           if (marcados > 0) return carregarAtual.current();
@@ -400,10 +427,12 @@ export default function Principal() {
     if (!pronto) return;
     carregar();
     const parar = listen("item:criado", carregar);
+    const pararNotas = listen("nota:criada", carregar);
     const pararPrioridades = listen("prioridades:alteradas", carregar);
     const relogio = setInterval(() => setAgora(new Date()), MINUTO_MS);
     return () => {
       parar.then((f) => f());
+      pararNotas.then((f) => f());
       pararPrioridades.then((f) => f());
       clearInterval(relogio);
     };
@@ -785,9 +814,19 @@ export default function Principal() {
     else setLista(destino);
   }
 
+  /** A nota vira tarefa na caixa de entrada e abre no editor, para completar prazo, projeto... */
+  async function virarNotaEmTarefa(nota: Nota) {
+    const id = await virarTarefa(nota);
+    const item = await lerItem(id);
+    await carregar();
+    if (item) setEditando(item);
+    mostrarAviso("Virou tarefa na caixa de entrada");
+  }
+
   const comandos: Comando[] = [
     ...TELAS.map((t) => ({ nome: `Ir para ${NOME_TELA[t]}`, acao: () => trocarLista(t) })),
     { nome: "Nova tarefa", tecla: "C", acao: () => invoke("abrir_captura") },
+    { nome: "Nova nota", acao: () => invoke("abrir_nota") },
     { nome: "Copiar o resumo da daily", acao: () => copiarDaily() },
     { nome: "Abrir o overlay de foco", acao: () => abrirMini() },
     { nome: somTocando ? "Parar o som do foco" : "Tocar o som do foco", acao: () => alternarSom() },
@@ -881,7 +920,9 @@ export default function Principal() {
       acoes.j = acoes.ArrowDown;
       acoes.k = acoes.ArrowUp;
 
-      if (lista === "agora") {
+      if (lista === "notas") {
+        acoes.n = () => invoke("abrir_nota");
+      } else if (lista === "agora") {
         Object.assign(acoes, {
           p: () => pausar(),
           " ": () => pausar(),
@@ -945,6 +986,8 @@ export default function Principal() {
       ? "As 4 semanas de uso real: como está indo e o que irrita."
       : lista === "agenda"
       ? "Compromissos e tarefas por dia. Arraste uma tarefa da faixa sem horário para a grade para marcar a hora."
+      : lista === "notas"
+      ? "O que você não pode esquecer, mas ainda não é tarefa. Cada nota avisa de tempos em tempos até ser resolvida ou virar tarefa."
       : lista === "fechadas"
       ? "Tarefas concluídas e arquivadas. Restaurar devolve cada uma para a lista em que estava."
       : lista === "dia"
@@ -1103,7 +1146,7 @@ export default function Principal() {
       ) : l === "dia" ? (
         !ritualFeito && <span title="Dia ainda não planejado" className="size-2 rounded-full border-[1.5px] border-destaque" />
       ) : (
-        ehLista(l) && <span className="text-[13px] font-normal tabular-nums text-apagado">{contagem[l] || ""}</span>
+        <span className="text-[13px] font-normal tabular-nums text-apagado">{(ehLista(l) ? contagem[l] : l === "notas" ? notasAtivas : 0) || ""}</span>
       )}
     </button>
   );
@@ -1178,7 +1221,7 @@ export default function Principal() {
               }`}
             >
               {NOME_TELA[l]}{" "}
-              {ehLista(l) && <span className="tabular-nums text-apagado">{contagem[l] || ""}</span>}
+              <span className="tabular-nums text-apagado">{(ehLista(l) ? contagem[l] : l === "notas" ? notasAtivas : 0) || ""}</span>
             </button>
           ))}
           <button
@@ -1197,6 +1240,11 @@ export default function Principal() {
           {avisoAtalho && (
             <p className="mb-5 rounded-xl bg-atraso-claro px-4 py-3 text-sm text-atraso">
               O atalho global não funcionou: {avisoAtalho}. Use Nova tarefa enquanto isso.
+            </p>
+          )}
+          {avisoAtalhoNota && (
+            <p className="mb-5 rounded-xl bg-atraso-claro px-4 py-3 text-sm text-atraso">
+              O atalho da nota não funcionou: {avisoAtalhoNota}. Troque em Configurações ou use Nova nota na tela Notas.
             </p>
           )}
           {erro && <p className="mb-5 rounded-xl bg-atraso-claro px-4 py-3 text-sm text-atraso">Erro no banco: {erro}</p>}
@@ -1316,6 +1364,21 @@ export default function Principal() {
               teclado={!editando && !configAberta && !pedidoNota && !anotando && !buscando && !boasVindas}
               aoAbrirTarefa={setEditando}
               aoAplicar={aplicar}
+              aoAvisar={mostrarAviso}
+              aoAlterar={carregar}
+            />
+          )}
+
+          {lista === "notas" && (
+            <Notas
+              versao={versao}
+              atalhoNota={rotuloAtalho(atalhoNota)}
+              aoVirarTarefa={virarNotaEmTarefa}
+              aoAbrirTarefa={(id) =>
+                lerItem(id)
+                  .then((item) => (item ? setEditando(item) : mostrarAviso("Essa tarefa foi apagada.")))
+                  .catch((e) => setErro(String(e)))
+              }
               aoAvisar={mostrarAviso}
               aoAlterar={carregar}
             />
@@ -1469,6 +1532,13 @@ export default function Principal() {
                 <span>Clique num horário para criar, arraste tarefas para marcar a hora</span>
                 <Dica teclas="Tab">trocar tela</Dica>
               </>
+            ) : lista === "notas" ? (
+              <>
+                <span>Clique numa nota para editar</span>
+                <Dica teclas="N">nova nota</Dica>
+                <Dica teclas={rotuloAtalho(atalhoNota)}>nota de qualquer janela</Dica>
+                <Dica teclas="Tab">trocar tela</Dica>
+              </>
             ) : lista === "fechadas" ? (
               <>
                 <span>Clique numa tarefa para abrir</span>
@@ -1588,6 +1658,11 @@ export default function Principal() {
         <Configuracoes
           atalho={atalho}
           aoMudarAtalho={setAtalho}
+          atalhoNota={atalhoNota}
+          aoMudarAtalhoNota={(novo) => {
+            setAtalhoNota(novo);
+            setAvisoAtalhoNota(null);
+          }}
           aoSincronizarDevops={() => sincronizarAzureAgora(true)}
           aoProcurarAtualizacao={async () => {
             if (import.meta.env.DEV) return "Rodando pelo código (npm run tauri dev): atualize com git pull.";
