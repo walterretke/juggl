@@ -16,6 +16,8 @@ import { gravarOverlayAoFocar, lerOverlayAoFocar } from "../sons/preferencias";
 interface Props {
   atalho: string;
   aoMudarAtalho: (atalho: string) => void;
+  atalhoNota: string;
+  aoMudarAtalhoNota: (atalho: string) => void;
   aoSincronizarDevops: () => Promise<void>;
   /** Procura versão nova; devolve a mensagem para mostrar. */
   aoProcurarAtualizacao: () => Promise<string>;
@@ -24,7 +26,7 @@ interface Props {
   aoFechar: () => void;
 }
 
-export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevops, aoProcurarAtualizacao, aoReverBoasVindas, aoFechar }: Props) {
+export default function Configuracoes({ atalho, aoMudarAtalho, atalhoNota, aoMudarAtalhoNota, aoSincronizarDevops, aoProcurarAtualizacao, aoReverBoasVindas, aoFechar }: Props) {
   const [versao, setVersao] = useState("");
   const [mensagemVersao, setMensagemVersao] = useState<string | null>(null);
   const [gravando, setGravando] = useState(false);
@@ -145,6 +147,13 @@ export default function Configuracoes({ atalho, aoMudarAtalho, aoSincronizarDevo
             </span>
           </span>
         </label>
+
+        <h3 className="mt-7 text-[15px] font-semibold">Atalho da nota</h3>
+        <p className="mt-1 text-sm text-suave">
+          Atual: <strong>{rotuloAtalho(atalhoNota)}</strong>. Abre uma nota rápida para não esquecer algo, com lembrete
+          de tempos em tempos.
+        </p>
+        <CampoAtalho atalho={atalhoNota} aoMudarAtalho={aoMudarAtalhoNota} aoGravar={setGravando} qual="nota" />
 
         <h3 className="mt-7 text-[15px] font-semibold">Foco</h3>
         <label className="mt-2 flex flex-wrap items-center gap-2 text-sm">

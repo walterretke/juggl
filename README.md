@@ -34,6 +34,12 @@ As marcações abaixo também valem no título do formulário (`Liberar VPN @car
 
 Um link do Teams, Jira, ServiceNow ou Azure DevOps na área de transferência é anexado com a origem reconhecida (o × remove). Tab completa `@` e `#` já usados; nomes com espaço viram `_` (`@Carla_Dias`).
 
+## Notas
+
+Uma nota é algo que você não pode esquecer, mas que ainda não é uma tarefa: "marque uma reunião com o Carlos". `Ctrl+Alt+Espaço` (troca nas configurações) abre uma janela rápida sobre qualquer janela, com título, descrição e de quanto em quanto tempo lembrar: 15 min, 30 min, 1 h, 2 h ou Outro (minutos ou horas, até uma semana). O último intervalo usado vem marcado na próxima nota. Enter salva (na descrição, Ctrl+Enter), Esc fecha. Como na nova tarefa, o texto selecionado na janela em uso vira a descrição; sem título, a primeira linha da descrição vira o título.
+
+A cada intervalo vem uma notificação do sistema ("Não esqueça: ..."); várias vencidas juntas viram uma notificação só. Durante o foco com o não perturbe ligado, o aviso espera o foco acabar. A tela **Notas** lista as notas ativas com o próximo aviso: clique para editar (trocar o intervalo recomeça a contagem), **Resolvida** para de avisar, **Adiar** empurra o próximo aviso em 1 h e **Virar tarefa** cria a tarefa na caixa de entrada com o mesmo título e descrição e abre o editor para completar. As resolvidas e as que viraram tarefa ficam embaixo, com Reabrir e Abrir tarefa. Na bandeja, Nova nota abre a mesma janela; `juggl --nota` também.
+
 ## Triagem
 
 A janela principal tem a tela **Agora** (o item em foco) e as listas: **Caixa de entrada** (as tarefas novas), **A fazer** (o que já foi triado, ordenado por prazo e prioridade), **Aguardando** (o que depende da resposta de alguém) e **Fechadas** (concluídas e arquivadas, com busca e "Restaurar", que devolve cada tarefa para a lista em que estava).
@@ -163,9 +169,9 @@ No editor da tarefa, "Anexar arquivo", arrastar ou colar (`Ctrl+V`) adiciona ane
 
 ## Bandeja, configurações e backup
 
-- Fechar a janela deixa o Juggl na bandeja do sistema, com o atalho ativo. O ícone tem o foco atual, Parar timer, Nova tarefa, Abrir o Juggl e Sair.
+- Fechar a janela deixa o Juggl na bandeja do sistema, com o atalho ativo. O ícone tem o foco atual, Parar timer, Nova tarefa, Nova nota, Abrir o Juggl e Sair.
 - Abrir o Juggl de novo só traz a janela existente. `juggl --captura` abre direto a captura (útil no Linux com Wayland: ligue esse comando a um atalho do sistema).
-- `,` abre as configurações: tema (igual ao sistema, claro ou escuro), atalho da captura, uso do texto selecionado, minutos até a pausa por inatividade, prioridades (renomear, cor, ordem, criar e remover) e backup na hora.
+- `,` abre as configurações: tema (igual ao sistema, claro ou escuro), atalho da captura, atalho da nota, uso do texto selecionado, minutos até a pausa por inatividade, prioridades (renomear, cor, ordem, criar e remover) e backup na hora.
 - Todo dia uma cópia do banco vai para a subpasta `backups/`, guardando as 7 mais recentes.
 - **Restaurar…** (em Configurações, Backup) volta o banco para um desses backups. Antes, o Juggl guarda o estado atual como um backup "antes de restaurar". Backups de uma versão anterior também servem.
 - **Itens recorrentes** (em Configurações): tarefas que voltam todo dia útil, toda semana ou todo mês. No dia, o item aparece na caixa de entrada; se o app ficou fechado, entra um só.
