@@ -1,3 +1,4 @@
+import { lerAvisosPrazo } from "../db/avisoPrazo";
 import { itemEmFoco } from "../db/foco";
 import {
   concluidosHoje,
@@ -39,12 +40,15 @@ export async function verificarRegras(agora = new Date()): Promise<number> {
     concluidosHoje(agora),
     naoPerturbeLigado(),
   ]);
+  const horasPrazo = regras.find((r) => r.id === "prazo_chegando")?.condicao.horas ?? 4;
+  const avisoPrazo = await lerAvisosPrazo(horasPrazo);
   const disparos = avaliarRegras(regras, {
     agora,
     itens,
     foco: foco && { itemId: foco.item.id, titulo: foco.item.titulo, inicio: foco.inicio },
     ritualFeito,
     concluidosHoje: concluidos,
+    avisoPrazo,
   });
 
   // Ações que não são aviso: marcar como do dia. Gravam a chave para não repetir.

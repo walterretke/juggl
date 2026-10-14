@@ -32,6 +32,36 @@ describe("regras prontas", () => {
     expect(d).toEqual([]);
   });
 
+  it("prazo chegando por prioridade: a alta avisa mais cedo e repete; a baixa avisa uma vez", () => {
+    const itens = [
+      item("alta", { prazo: "2026-10-10", prioridade_id: "alta", prioridade: "Alta" }),
+      item("baixa", { prazo: "2026-10-10", prioridade_id: "baixa" }),
+      item("sem", { prazo: "2026-10-10" }),
+    ];
+    const avisoPrazo = { alta: { horas: 24, repetirHoras: 2 }, baixa: { horas: 4, repetirHoras: 0 } };
+    const regras = [pronta("prazo_chegando", { horas: 4 })];
+    // Sexta 15h: faltam 27 horas para sábado às 18h. Ninguém avisa ainda.
+    expect(avaliarRegras(regras, contexto({ itens, avisoPrazo }))).toEqual([]);
+    // Sábado 9h: faltam 9 horas. Só a alta.
+    const sabado9 = avaliarRegras(regras, contexto({ itens, avisoPrazo, agora: new Date(2026, 9, 10, 9) }));
+    expect(sabado9.map((d) => d.itemId)).toEqual(["alta"]);
+    expect(sabado9[0]).toMatchObject({ titulo: "Prazo chegando · Alta", chave: "prazo_chegando:alta:2026-10-10:4" });
+    expect(sabado9[0].corpo).toBe("alta vence hoje às 18h (faltam 9 horas).");
+    // Duas horas depois a alta ganha outra chave (outro aviso); às 15h, baixa e sem prioridade avisam uma vez.
+    const sabado15 = avaliarRegras(regras, contexto({ itens, avisoPrazo, agora: new Date(2026, 9, 10, 15) }));
+    expect(sabado15.map((d) => d.chave)).toEqual([
+      "prazo_chegando:alta:2026-10-10:1",
+      "prazo_chegando:baixa:2026-10-10",
+      "prazo_chegando:sem:2026-10-10",
+    ]);
+  });
+
+  it("prazo chegando: 0 horas desliga o aviso daquela prioridade", () => {
+    const itens = [item("x", { prazo: "2026-10-09", prioridade_id: "baixa" })];
+    const d = avaliarRegras([pronta("prazo_chegando", { horas: 4 })], contexto({ itens, avisoPrazo: { baixa: { horas: 0, repetirHoras: 0 } } }));
+    expect(d).toEqual([]);
+  });
+
   it("promessa esquecida: prometido e parado há 2 dias ou mais", () => {
     const itens = [
       item("parado", { prometido_para: "2026-10-12", atualizado_em: "2026-10-06T12:00:00.000Z", pessoa: "Ana" }),

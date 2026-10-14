@@ -1329,10 +1329,10 @@ export default function Principal() {
               foco={foco}
               planejado={ritualFeito}
               aoAplicar={aplicar}
-              aoFocar={focar}
+              aoFocar={(item) => focar(item, false)}
               aoPausar={pausar}
               aoCancelarFoco={pedirCancelarFoco}
-              aoConcluir={concluirFoco}
+              aoConcluir={() => concluirFoco().catch((e) => setErro(String(e)))}
               aoAlterar={() => {
                 setLembreteRitual(false);
                 carregar();
@@ -1402,7 +1402,7 @@ export default function Principal() {
               aoFocar={focar}
               aoPausar={pausar}
               aoCancelarFoco={pedirCancelarFoco}
-              aoConcluir={concluirFoco}
+              aoConcluir={() => concluirFoco().catch((e) => setErro(String(e)))}
               aoCobrar={() => foco && cobrar(foco.item)}
               aoPlanejar={() => trocarLista("dia")}
               aoEditar={() => foco && setEditando(foco.item)}
