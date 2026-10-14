@@ -118,6 +118,12 @@ fn migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/0009_notas.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 10,
+            description: "foco_cancelado",
+            sql: include_str!("../migrations/0010_foco_cancelado.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
