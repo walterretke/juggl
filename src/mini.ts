@@ -25,7 +25,7 @@ async function cantoDaTela(): Promise<{ x: number; y: number } | null> {
 
 /**
  * Abre o overlay de foco: uma faixa discreta, sempre por cima, no canto da tela, com a
- * tarefa em foco, o timer, pausar e finalizar. Se já existe, só mostra.
+ * tarefa em foco, o timer, pausar, finalizar e cancelar. Se já existe, só mostra.
  */
 export async function abrirMiniJanela(): Promise<void> {
   const existente = await WebviewWindow.getByLabel(JANELA_MINI);

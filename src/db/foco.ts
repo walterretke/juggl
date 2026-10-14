@@ -1,7 +1,7 @@
 import { getDb } from ".";
 import { gravarConfig, lerConfig } from "./config";
 import { agoraIso } from "./ids";
-import { gravarCampos, registrarEvento, SELECT_ITEM, type Item } from "./itens";
+import { gravarCampos, registrarEvento, SELECT_ITEM, type Item, type Status } from "./itens";
 
 /** O item em foco e quando a sessão atual começou. */
 export interface Foco {
@@ -62,6 +62,48 @@ export async function encerrarFoco(
   await gravarCampos(foco.item.id, { status: concluido ? "feito" : "pausado" });
   // Ao concluir, a nota é a mensagem de encerramento (opcional, do overlay de foco).
   return concluido ? registrarEvento(foco.item.id, "concluido", { de: "em_foco", mensagem: nota?.trim() || null }, quando) : null;
+}
+
+/**
+ * Para onde o item volta ao cancelar o foco: o status de antes de focar. Quem esperava
+ * alguém volta para A fazer, porque focar já apagou de quem era a vez.
+ */
+export function statusAoCancelar(de: string | null | undefined): Status {
+  switch (de) {
+    case "inbox":
+    case "a_fazer":
+    case "pausado":
+    case "feito":
+    case "arquivado":
+      return de;
+    case "aguardando":
+      return "a_fazer";
+    default:
+      return "pausado";
+  }
+}
+
+/**
+ * Cancela a sessão do item em foco: não grava foco_fim, então o tempo dela não entra nas
+ * horas, e o item volta para onde estava antes de focar. Fica um evento foco_cancelado
+ * para o histórico.
+ */
+export async function cancelarFoco(foco: Foco): Promise<void> {
+  const db = await getDb();
+  const [inicio] = await db.select<{ dados: string | null }[]>(
+    "SELECT dados FROM evento WHERE item_id = $1 AND tipo = 'foco_inicio' ORDER BY timestamp DESC LIMIT 1",
+    [foco.item.id],
+  );
+  let de: string | null = null;
+  try {
+    de = inicio?.dados ? (JSON.parse(inicio.dados) as { de?: string }).de ?? null : null;
+  } catch {
+    // Dado antigo ou estranho: cai no padrão (pausado).
+  }
+  const status = statusAoCancelar(de);
+  const duracao = Math.max(0, Date.now() - new Date(foco.inicio).getTime());
+  await registrarEvento(foco.item.id, "foco_cancelado", { inicio: foco.inicio, duracao_ms: duracao, volta_para: status });
+  await gravarCampos(foco.item.id, { status });
 }
 
 /** Põe o item em foco. Quem estava em foco antes precisa ser encerrado antes (ver `trocarFoco`). */

@@ -29,7 +29,8 @@ async function redimensionarPelaBase(janela: Window, altura: number) {
 /**
  * Overlay de foco: uma faixa discreta no canto da tela, quase transparente até o mouse
  * passar por cima. Mostra a tarefa ativa e o timer, com pausar, finalizar (com uma mensagem
- * de encerramento opcional) e ligar o som. Arraste pela faixa para mudar de lugar.
+ * de encerramento opcional), cancelar sem contar o tempo (confirma na própria faixa) e ligar
+ * o som. Arraste pela faixa para mudar de lugar.
  */
 export default function MiniFoco() {
   const [foco, setFoco] = useState<Foco | null>(null);
@@ -39,6 +40,8 @@ export default function MiniFoco() {
   const [encerrando, setEncerrando] = useState(false);
   const [mensagem, setMensagem] = useState("");
   const [som, setSom] = useState<{ tocando: string | null; escolhido: string | null }>({ tocando: null, escolhido: null });
+  /** Esperando confirmar o cancelamento do foco. */
+  const [cancelando, setCancelando] = useState(false);
   const campo = useRef<HTMLTextAreaElement>(null);
 
   useLayoutEffect(() => {
@@ -68,6 +71,14 @@ export default function MiniFoco() {
     };
   }, []);
 
+  useEffect(() => setCancelando(false), [foco?.item.id, foco?.inicio]);
+  useEffect(() => {
+    if (!cancelando) return;
+    const aoTeclar = (e: KeyboardEvent) => e.key === "Escape" && setCancelando(false);
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  }, [cancelando]);
+
   // Abre espaço para a mensagem de encerramento e volta ao tamanho de faixa depois.
   useEffect(() => {
     const janela = getCurrentWindow();
@@ -91,68 +102,94 @@ export default function MiniFoco() {
     <div className="h-screen p-0.5">
       <div
         className={`flex h-full flex-col rounded-2xl bg-folha text-tinta shadow-[0_0_0_1px_var(--color-linha)] transition-opacity duration-300 select-none ${
-          encerrando ? "opacity-100" : "opacity-55 hover:opacity-100"
+          encerrando || cancelando ? "opacity-100" : "opacity-55 hover:opacity-100"
         }`}
       >
-        <div data-tauri-drag-region className="flex h-[48px] shrink-0 items-center gap-1.5 px-3">
-          <span className={`size-2 shrink-0 rounded-full ${foco ? "animate-pulse bg-destaque" : "border border-apagado"}`} />
-          <button
-            type="button"
-            onClick={abrirPrincipal}
-            title={tarefa ? `${tarefa.titulo}: abrir o Juggl` : "Abrir o Juggl"}
-            className="min-w-0 flex-1 truncate text-left text-[14px] font-medium"
-          >
-            {foco ? foco.item.titulo : tarefa ? `Pausada: ${tarefa.titulo}` : "Nada em foco"}
-          </button>
-          {foco && (
-            <span className="shrink-0 font-titulo text-lg font-medium tabular-nums tracking-tight">
-              {formatarCronometro(agora - new Date(foco.inicio).getTime())}
+        {foco && cancelando ? (
+          <div data-tauri-drag-region className="flex h-[48px] shrink-0 items-center gap-2 px-3">
+            <span data-tauri-drag-region className="min-w-0 flex-1 truncate text-[13px] text-suave">
+              Cancelar o foco? O tempo não conta.
             </span>
-          )}
-          {(som.escolhido || som.tocando) && (
             <button
               type="button"
-              title={som.tocando ? "Parar o som" : "Tocar o som"}
-              aria-label={som.tocando ? "Parar o som" : "Tocar o som"}
-              onClick={() => emit("som:alternar").catch(() => {})}
-              className={`${botao} ${som.tocando ? "text-destaque" : ""}`}
+              autoFocus
+              onClick={() => {
+                setCancelando(false);
+                emit("foco:cancelar").catch(() => {});
+              }}
+              className="shrink-0 rounded-md bg-atraso px-2 py-1 text-[13px] font-semibold text-folha hover:opacity-90"
             >
-              {som.tocando ? "♪" : "♫"}
+              Cancelar
             </button>
-          )}
-          {foco ? (
-            <>
-              <button type="button" title="Pausar" aria-label="Pausar" onClick={() => emit("bandeja:pausar")} className={botao}>
-                <Icone nome="pausa" />
-              </button>
+            <button
+              type="button"
+              onClick={() => setCancelando(false)}
+              className="shrink-0 rounded-md px-2 py-1 text-[13px] text-suave hover:bg-etiqueta hover:text-tinta"
+            >
+              Voltar
+            </button>
+          </div>
+        ) : (
+          <div data-tauri-drag-region className="flex h-[48px] shrink-0 items-center gap-1.5 px-3">
+            <span className={`size-2 shrink-0 rounded-full ${foco ? "animate-pulse bg-destaque" : "border border-apagado"}`} />
+            <button
+              type="button"
+              onClick={abrirPrincipal}
+              title={tarefa ? `${tarefa.titulo}: abrir o Juggl` : "Abrir o Juggl"}
+              className="min-w-0 flex-1 truncate text-left text-[14px] font-medium"
+            >
+              {foco ? foco.item.titulo : tarefa ? `Pausada: ${tarefa.titulo}` : "Nada em foco"}
+            </button>
+            {foco && (
+              <span className="shrink-0 font-titulo text-lg font-medium tabular-nums tracking-tight">
+                {formatarCronometro(agora - new Date(foco.inicio).getTime())}
+              </span>
+            )}
+            {(som.escolhido || som.tocando) && (
               <button
                 type="button"
-                title="Finalizar a tarefa"
-                aria-label="Finalizar a tarefa"
-                onClick={() => setEncerrando(!encerrando)}
-                className={`${botao} ${encerrando ? "bg-etiqueta text-tinta" : ""}`}
+                title={som.tocando ? "Parar o som" : "Tocar o som"}
+                aria-label={som.tocando ? "Parar o som" : "Tocar o som"}
+                onClick={() => emit("som:alternar").catch(() => {})}
+                className={`${botao} ${som.tocando ? "text-destaque" : ""}`}
               >
-                <Icone nome="check" />
+                {som.tocando ? "♪" : "♫"}
               </button>
-            </>
-          ) : (
-            tarefa && (
-              <button
-                type="button"
-                title="Retomar o foco"
-                aria-label="Retomar o foco"
-                onClick={() => emit("overlay:retomar", { itemId: tarefa.id })}
-                className={botao}
-              >
-                <Icone nome="foco" />
-              </button>
-            )
-          )}
-          <button type="button" title="Fechar o overlay" aria-label="Fechar" onClick={() => getCurrentWindow().close()} className={botao}>
-            ×
-          </button>
-        </div>
-        {encerrando && foco && (
+            )}
+            {foco ? (
+              <>
+                <button type="button" title="Pausar" aria-label="Pausar" onClick={() => emit("bandeja:pausar")} className={botao}>
+                  <Icone nome="pausa" />
+                </button>
+                <button
+                  type="button"
+                  title="Finalizar a tarefa"
+                  aria-label="Finalizar a tarefa"
+                  onClick={() => setEncerrando(!encerrando)}
+                  className={`${botao} ${encerrando ? "bg-etiqueta text-tinta" : ""}`}
+                >
+                  <Icone nome="check" />
+                </button>
+              </>
+            ) : (
+              tarefa && (
+                <button
+                  type="button"
+                  title="Retomar o foco"
+                  aria-label="Retomar o foco"
+                  onClick={() => emit("overlay:retomar", { itemId: tarefa.id })}
+                  className={botao}
+                >
+                  <Icone nome="foco" />
+                </button>
+              )
+            )}
+            <button type="button" title="Fechar o overlay" aria-label="Fechar" onClick={() => getCurrentWindow().close()} className={botao}>
+              ×
+            </button>
+          </div>
+        )}
+        {encerrando && foco && !cancelando && (
           <form
             className="flex flex-1 flex-col gap-2 px-3 pb-3"
             onSubmit={(e) => {
