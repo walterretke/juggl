@@ -14,6 +14,8 @@ interface Props {
   doDia: boolean;
   aoFocar: (item: Item) => void;
   aoPausar: () => void;
+  /** Cancela o foco sem contar o tempo (pede confirmação). */
+  aoCancelarFoco: () => void;
   aoConcluir: () => void;
   aoCobrar: () => void;
   aoPlanejar: () => void;
@@ -29,6 +31,7 @@ export default function Agora({
   doDia,
   aoFocar,
   aoPausar,
+  aoCancelarFoco,
   aoConcluir,
   aoCobrar,
   aoPlanejar,
@@ -135,6 +138,14 @@ export default function Agora({
               className="rounded-lg bg-destaque px-4 py-2 text-sm font-semibold text-folha hover:opacity-90"
             >
               Concluir <kbd className="ml-1 font-sans font-normal opacity-70">X</kbd>
+            </button>
+            <button
+              type="button"
+              onClick={aoCancelarFoco}
+              title="Encerra a sessão sem contar o tempo nas horas"
+              className="rounded-lg px-4 py-2 text-sm text-suave hover:bg-etiqueta hover:text-tinta"
+            >
+              Cancelar foco <kbd className="ml-1 font-sans font-normal text-apagado">Del</kbd>
             </button>
             <button
               type="button"

@@ -8,6 +8,7 @@ import { interpretarPrazo } from "../captura/parser";
 import { agendarBackupDiario } from "../db/backup";
 import { ATALHO_PADRAO, lerConfig } from "../db/config";
 import {
+  cancelarFoco,
   encerrarFoco,
   itemEmFoco,
   LIMITE_PULSO_MS,
@@ -60,6 +61,7 @@ import { abrirBoasVindas, marcarBoasVindasVistas } from "../db/boasVindas";
 import Horas from "./Horas";
 import ItemLista, { type CampoEditavel, type Menu } from "./ItemLista";
 import PedidoNota from "./PedidoNota";
+import ConfirmarCancelarFoco from "./ConfirmarCancelarFoco";
 import Pessoas from "./Pessoas";
 import Regras from "./Regras";
 import MeuDia from "./MeuDia";
@@ -147,6 +149,8 @@ export default function Principal() {
   const [foco, setFoco] = useState<Foco | null>(null);
   const [proximas, setProximas] = useState<Item[]>([]);
   const [pedidoNota, setPedidoNota] = useState<Pedido | null>(null);
+  /** Foco esperando a confirmação para ser cancelado. */
+  const [cancelandoFoco, setCancelandoFoco] = useState<Foco | null>(null);
   const [pronto, setPronto] = useState(false);
   const primeiraCarga = useRef(true);
   const ultimoPulso = useRef(Date.now());
@@ -519,7 +523,7 @@ export default function Principal() {
   useEffect(() => {
     if (!alerta) return;
     function aoTeclar(e: KeyboardEvent) {
-      if (pedidoNota || configAberta || boasVindas || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (pedidoNota || cancelandoFoco || configAberta || boasVindas || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select")) return;
       const resposta = ({ t: "trocar", c: "continuar", a: "adiar" } as const)[e.key.toLowerCase() as "t" | "c" | "a"];
       if (!resposta) return;
@@ -560,6 +564,17 @@ export default function Principal() {
     });
   }
 
+  /** Cancela o foco sem contar o tempo da sessão; pede confirmação antes. */
+  function pedirCancelarFoco() {
+    if (foco) setCancelandoFoco(foco);
+  }
+
+  async function confirmarCancelarFoco(alvo: Foco) {
+    await cancelarFoco(alvo);
+    mostrarAviso("Foco cancelado. Esse tempo não contou.");
+    await carregar();
+  }
+
   async function concluirFoco() {
     if (!foco) return;
     await encerrarFoco(foco, "concluido");
@@ -574,6 +589,18 @@ export default function Principal() {
     const parar = listen("bandeja:pausar", async () => {
       if (!focoAtual.current) return;
       await encerrarFoco(focoAtual.current, "pausa");
+      await carregar();
+    });
+    return () => {
+      parar.then((f) => f());
+    };
+  }, [carregar]);
+
+  // "Cancelar" na mini-janela: ela já confirmou, então cancela direto.
+  useEffect(() => {
+    const parar = listen("foco:cancelar", async () => {
+      if (!focoAtual.current) return;
+      await cancelarFoco(focoAtual.current);
       await carregar();
     });
     return () => {
@@ -632,7 +659,12 @@ export default function Principal() {
     { nome: "Nova captura", tecla: "C", acao: () => invoke("abrir_captura") },
     { nome: "Copiar o resumo da daily", acao: () => copiarDaily() },
     { nome: "Abrir a mini-janela de foco", acao: () => abrirMini() },
-    ...(foco ? [{ nome: `Pausar ${foco.item.titulo}`, tecla: "P", acao: () => pausar() }] : []),
+    ...(foco
+      ? [
+          { nome: `Pausar ${foco.item.titulo}`, tecla: "P", acao: () => pausar() },
+          { nome: `Cancelar o foco em ${foco.item.titulo}`, tecla: "Delete", acao: () => pedirCancelarFoco() },
+        ]
+      : []),
     { nome: "Anotar o que irrita", tecla: "!", acao: () => setAnotando(true) },
     { nome: "Configurações", tecla: ",", acao: () => setConfigAberta(true) },
     { nome: "Rever as boas-vindas", acao: () => setBoasVindas(true) },
@@ -643,7 +675,7 @@ export default function Principal() {
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
       if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
-      if (configAberta || pedidoNota || anotando || buscando || boasVindas) return;
+      if (configAberta || pedidoNota || cancelandoFoco || anotando || buscando || boasVindas) return;
       const tecla = e.key.toLowerCase();
       if (tecla === "k") {
         e.preventDefault();
@@ -690,7 +722,7 @@ export default function Principal() {
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
       // # e @ podem vir com AltGr (Ctrl+Alt no Windows) em alguns teclados.
-      if (edicao || configAberta || pedidoNota || menu || anotando || buscando || boasVindas || ((e.ctrlKey || e.metaKey || e.altKey) && e.key !== "#" && e.key !== "@")) return;
+      if (edicao || configAberta || pedidoNota || cancelandoFoco || menu || anotando || buscando || boasVindas || ((e.ctrlKey || e.metaKey || e.altKey) && e.key !== "#" && e.key !== "@")) return;
       // Digitando num campo (busca, código do projeto): as letras são texto, não atalhos.
       if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select")) return;
       const item = itens?.[selecionado];
@@ -722,6 +754,7 @@ export default function Principal() {
           p: () => pausar(),
           " ": () => pausar(),
           x: () => concluirFoco(),
+          Delete: () => pedirCancelarFoco(),
           o: () => foco?.item.link && openUrl(foco.item.link),
           b: () => foco && cobrar(foco.item),
         });
@@ -758,7 +791,7 @@ export default function Principal() {
     }
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
-  }, [edicao, configAberta, pedidoNota, menu, anotando, buscando, boasVindas, itens, selecionado, lista, aplicar, foco, proximas, prioridades, atualizacao]);
+  }, [edicao, configAberta, pedidoNota, cancelandoFoco, menu, anotando, buscando, boasVindas, itens, selecionado, lista, aplicar, foco, proximas, prioridades, atualizacao]);
 
   // Mantém o item selecionado visível ao navegar pelo teclado.
   useEffect(() => {
@@ -946,6 +979,7 @@ export default function Principal() {
                   arrasto={alvoDeArrasto("agora")}
                   aoAbrir={() => trocarLista("agora")}
                   aoPausar={pausar}
+                  aoCancelar={pedirCancelarFoco}
                   aoAbrirMini={abrirMini}
                 />
               )}
@@ -1102,6 +1136,7 @@ export default function Principal() {
               aoAplicar={aplicar}
               aoFocar={focar}
               aoPausar={pausar}
+              aoCancelarFoco={pedirCancelarFoco}
               aoConcluir={concluirFoco}
               aoAlterar={() => {
                 setLembreteRitual(false);
@@ -1139,6 +1174,7 @@ export default function Principal() {
               doDia={proximas.some((i) => i.dia_planejado === dataLocalIso(agora))}
               aoFocar={focar}
               aoPausar={pausar}
+              aoCancelarFoco={pedirCancelarFoco}
               aoConcluir={concluirFoco}
               aoCobrar={() => foco && cobrar(foco.item)}
               aoPlanejar={() => trocarLista("dia")}
@@ -1306,6 +1342,7 @@ export default function Principal() {
               <>
                 <Dica teclas="P">pausar</Dica>
                 <Dica teclas="X">concluir</Dica>
+                <Dica teclas="Delete">cancelar foco</Dica>
                 <Dica teclas="1 2 3">focar uma das próximas</Dica>
                 <Dica teclas="B">cobrou de novo</Dica>
                 <Dica teclas="D">descrição</Dica>
@@ -1376,6 +1413,18 @@ export default function Principal() {
         />
       )}
 
+      {cancelandoFoco && (
+        <ConfirmarCancelarFoco
+          foco={cancelandoFoco}
+          aoVoltar={() => setCancelandoFoco(null)}
+          aoConfirmar={() => {
+            const alvo = cancelandoFoco;
+            setCancelandoFoco(null);
+            confirmarCancelarFoco(alvo).catch((e) => setErro(String(e)));
+          }}
+        />
+      )}
+
       {configAberta && (
         <Configuracoes
           atalho={atalho}
@@ -1426,14 +1475,15 @@ interface PropsCartaoFoco {
   arrasto: React.HTMLAttributes<HTMLElement>;
   aoAbrir: () => void;
   aoPausar: () => void;
+  aoCancelar: () => void;
   aoAbrirMini: () => void;
 }
 
 /**
- * O foco na barra lateral, sempre à vista: título, timer e Pausar. Clicar abre a tela
+ * O foco na barra lateral, sempre à vista: título, timer, Pausar e Cancelar. Clicar abre a tela
  * Agora; soltar um item aqui põe ele em foco.
  */
-function CartaoFoco({ foco, ativo, alvo, arrasto, aoAbrir, aoPausar, aoAbrirMini }: PropsCartaoFoco) {
+function CartaoFoco({ foco, ativo, alvo, arrasto, aoAbrir, aoPausar, aoCancelar, aoAbrirMini }: PropsCartaoFoco) {
   const [agora, setAgora] = useState(() => Date.now());
   useEffect(() => {
     if (!foco) return;
@@ -1478,6 +1528,15 @@ function CartaoFoco({ foco, ativo, alvo, arrasto, aoAbrir, aoPausar, aoAbrirMini
         </span>
         <button type="button" title="Pausar (P na tela Agora)" aria-label="Pausar" onClick={aoPausar} className="rounded-md p-1 text-suave hover:bg-etiqueta hover:text-tinta">
           <Icone nome="pausa" />
+        </button>
+        <button
+          type="button"
+          title="Cancelar o foco sem contar o tempo"
+          aria-label="Cancelar o foco"
+          onClick={aoCancelar}
+          className="rounded-md p-1 text-suave hover:bg-etiqueta hover:text-tinta"
+        >
+          <Icone nome="cancelar" />
         </button>
         <button
           type="button"

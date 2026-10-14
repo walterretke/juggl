@@ -24,6 +24,8 @@ interface Props {
   aoAplicar: (item: Item, mudancas: Mudancas, mensagem?: string) => Promise<void>;
   aoFocar: (item: Item) => void;
   aoPausar: () => void;
+  /** Cancela o foco sem contar o tempo (pede confirmação). */
+  aoCancelarFoco: () => void;
   aoConcluir: () => void;
   /** Algo mudou sem passar por aoAplicar (plano confirmado, dia fechado): recarrega tudo. */
   aoAlterar: () => void;
@@ -118,6 +120,7 @@ export default function MeuDia({
   aoAplicar,
   aoFocar,
   aoPausar,
+  aoCancelarFoco,
   aoConcluir,
   aoAlterar,
   aoAvisar,
@@ -516,6 +519,14 @@ export default function MeuDia({
                   className="rounded-lg bg-destaque px-3 py-1 text-[13px] font-semibold text-folha hover:opacity-90"
                 >
                   Concluir
+                </button>
+                <button
+                  type="button"
+                  onClick={aoCancelarFoco}
+                  title="Encerra a sessão sem contar o tempo nas horas"
+                  className="rounded-lg px-3 py-1 text-[13px] text-suave hover:bg-etiqueta hover:text-tinta"
+                >
+                  Cancelar
                 </button>
               </div>
             </article>

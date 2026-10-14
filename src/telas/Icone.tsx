@@ -20,6 +20,7 @@ const CAMINHOS = {
   copiar: "M5.5 5.5h7v7h-7zM3.5 10.5v-7h7",
   janela: "M2.5 3.5h11v9h-11zM8.5 8.5h4v3h-4z",
   pausa: "M6 4v8M10 4v8",
+  cancelar: "M4.5 4.5l7 7M11.5 4.5l-7 7",
 } as const;
 
 export type NomeIcone = keyof typeof CAMINHOS;

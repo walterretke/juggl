@@ -5,7 +5,7 @@ export const JANELA_MINI = "mini";
 
 /**
  * Abre a mini-janela de foco: uma faixa sempre por cima, com o item em foco, o timer
- * e Pausar, para quando a janela principal está atrás do Teams. Se já existe, traz.
+ * e Pausar/Cancelar, para quando a janela principal está atrás do Teams. Se já existe, traz.
  */
 export async function abrirMiniJanela(): Promise<void> {
   const existente = await WebviewWindow.getByLabel(JANELA_MINI);
