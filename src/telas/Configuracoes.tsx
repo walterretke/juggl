@@ -5,7 +5,7 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { backupAgora, listarBackups, restaurarBackup } from "../db/backup";
 import { gravarConfig, lerConfig } from "../db/config";
 import CampoAtalho from "./CampoAtalho";
-import EditorPrioridades from "./EditorPrioridades";
+import EditorPrioridades, { EditorTiposEspera } from "./EditorPrioridades";
 import SecaoAvisoPrazo from "./SecaoAvisoPrazo";
 import SecaoDevops from "./SecaoDevops";
 import SecaoRecorrentes from "./SecaoRecorrentes";
@@ -149,9 +149,9 @@ export default function Configuracoes({ atalho, aoMudarAtalho, atalhoNota, aoMud
           </span>
         </label>
 
-        <h3 className="mt-7 text-[15px] font-semibold">Atalho da nota</h3>
+        <h3 className="mt-7 text-[15px] font-semibold">Atalho do lembrete</h3>
         <p className="mt-1 text-sm text-suave">
-          Atual: <strong>{rotuloAtalho(atalhoNota)}</strong>. Abre uma nota rápida para não esquecer algo, com lembrete
+          Atual: <strong>{rotuloAtalho(atalhoNota)}</strong>. Abre um lembrete rápido para não esquecer algo, com aviso
           de tempos em tempos.
         </p>
         <CampoAtalho atalho={atalhoNota} aoMudarAtalho={aoMudarAtalhoNota} aoGravar={setGravando} qual="nota" />
@@ -205,6 +205,9 @@ export default function Configuracoes({ atalho, aoMudarAtalho, atalhoNota, aoMud
 
         <h3 className="mt-7 text-[15px] font-semibold">Aviso de prazo por prioridade</h3>
         <SecaoAvisoPrazo />
+
+        <h3 className="mt-7 text-[15px] font-semibold">Tipos de espera</h3>
+        <EditorTiposEspera />
 
         <h3 className="mt-7 text-[15px] font-semibold">Backup</h3>
         <p className="mt-1 text-sm text-suave">

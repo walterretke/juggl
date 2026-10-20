@@ -127,7 +127,7 @@ export default function NotaRapida() {
   return (
     <div ref={caixa} onKeyDown={aoTeclar} className="bg-folha px-[22px] pt-4 pb-3.5 text-tinta">
       <label htmlFor="nota-titulo" className="block text-xs font-semibold text-suave">
-        Nota para não esquecer
+        Lembrete para não esquecer
       </label>
       <input
         id="nota-titulo"

@@ -60,7 +60,7 @@ describe("textoDoAviso", () => {
   it("várias viram um resumo", () => {
     const notas = Array.from({ length: 6 }, (_, i) => ({ titulo: `Nota ${i + 1}`, descricao: null, intervalo_min: 15 }));
     const aviso = textoDoAviso(notas);
-    expect(aviso?.titulo).toBe("6 notas para não esquecer");
+    expect(aviso?.titulo).toBe("6 lembretes para não esquecer");
     expect(aviso?.corpo.split("\n")).toEqual(["• Nota 1", "• Nota 2", "• Nota 3", "• Nota 4", "e mais 2."]);
   });
 });

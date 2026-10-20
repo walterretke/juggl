@@ -60,7 +60,7 @@ export function textoDoAviso(notas: NotaParaAviso[]): { titulo: string; corpo: s
   }
   const linhas = notas.slice(0, 4).map((n) => `• ${n.titulo}`);
   if (notas.length > 4) linhas.push(`e mais ${notas.length - 4}.`);
-  return { titulo: `${notas.length} notas para não esquecer`, corpo: linhas.join("\n") };
+  return { titulo: `${notas.length} lembretes para não esquecer`, corpo: linhas.join("\n") };
 }
 
 /** O intervalo como fica na tela: um dos rápidos, ou "Outro" com o valor digitado. */

@@ -23,6 +23,16 @@ describe("montarQuadro", () => {
     expect(quadro.depois.flatMap((g) => g.itens.map((i) => i.id)).sort()).toEqual(["ontem", "pausado"]);
   });
 
+  it("em espera fica só na coluna Em espera, mesmo se era do dia", () => {
+    const quadro = montarQuadro(
+      [item("aprovacao", { status: "aguardando", dia_planejado: "2026-10-12", espera: "Aguardando aprovação" }), item("resto")],
+      SEGUNDA_9H,
+    );
+    expect(quadro.espera.map((i) => i.id)).toEqual(["aprovacao"]);
+    expect(quadro.hoje).toEqual([]);
+    expect(quadro.depois.flatMap((g) => g.itens.map((i) => i.id))).toEqual(["resto"]);
+  });
+
   it("item em foco que não é do dia fica só em Fazendo agora", () => {
     const quadro = montarQuadro([item("foco", { status: "em_foco" })], SEGUNDA_9H);
     expect(quadro.fazendo?.id).toBe("foco");

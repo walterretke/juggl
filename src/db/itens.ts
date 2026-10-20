@@ -29,6 +29,10 @@ export interface Item {
   aguardando_quem: string | null;
   /** Aguardando: dia de cobrar o retorno; nesse dia o item volta sozinho para A fazer. */
   aguardando_ate: string | null;
+  /** Em espera: o motivo (tipo de espera das Configurações), com nome e cor para o cartão. */
+  espera_tipo_id: string | null;
+  espera: string | null;
+  espera_cor: CorPrioridade | null;
   link: string | null;
   origem: string;
   id_externo: string | null;
@@ -72,6 +76,7 @@ export type Mudancas = Partial<
     | "quando"
     | "aguardando_quem"
     | "aguardando_ate"
+    | "espera_tipo_id"
     | "pessoa_id"
     | "projeto_id"
     | "agenda_inicio"
@@ -207,6 +212,7 @@ export const SELECT_ITEM = `
   SELECT item.id, item.titulo, item.nota, item.status, item.prioridade_id, prioridade.nome AS prioridade,
          prioridade.cor AS prioridade_cor, item.prazo, item.prometido_para, item.dia_planejado,
          item.quando, item.aguardando_quem, item.aguardando_ate,
+         item.espera_tipo_id, tipo_espera.nome AS espera, tipo_espera.cor AS espera_cor,
          item.link, item.origem,
          item.id_externo, item.criado_em, item.atualizado_em, item.pessoa_id, item.projeto_id,
          pessoa.apelido AS pessoa, projeto.nome AS projeto,
@@ -229,7 +235,8 @@ export const SELECT_ITEM = `
     FROM item
     LEFT JOIN pessoa ON pessoa.id = item.pessoa_id
     LEFT JOIN projeto ON projeto.id = item.projeto_id
-    LEFT JOIN prioridade ON prioridade.id = item.prioridade_id`;
+    LEFT JOIN prioridade ON prioridade.id = item.prioridade_id
+    LEFT JOIN tipo_espera ON tipo_espera.id = item.espera_tipo_id`;
 
 export async function listarItens(lista: Lista): Promise<Item[]> {
   const db = await getDb();
@@ -258,6 +265,7 @@ const CAMPOS_EDITAVEIS = [
   "quando",
   "aguardando_quem",
   "aguardando_ate",
+  "espera_tipo_id",
   "pessoa_id",
   "projeto_id",
   "agenda_inicio",
@@ -303,10 +311,14 @@ export async function registrarEvento(itemId: string, tipo: string, dados: unkno
  */
 export async function alterarItem(item: Item, original: Mudancas): Promise<Alteracao> {
   // Saiu de Aguardando (ou resolveu o retorno): a espera acaba junto, e o desfazer a traz de volta.
-  const mudancas: Mudancas =
-    "status" in original && original.status !== "aguardando" && !("aguardando_ate" in original) && (item.aguardando_ate || item.aguardando_quem)
-      ? { ...original, aguardando_quem: null, aguardando_ate: null }
-      : original;
+  const saiu = "status" in original && original.status !== "aguardando";
+  const mudancas: Mudancas = { ...original };
+  if (saiu && !("aguardando_ate" in original) && (item.aguardando_ate || item.aguardando_quem)) {
+    mudancas.aguardando_quem = null;
+    mudancas.aguardando_ate = null;
+  }
+  // O motivo só vale enquanto está em espera.
+  if (saiu && !("espera_tipo_id" in original) && item.espera_tipo_id) mudancas.espera_tipo_id = null;
   const anterior: Mudancas = {};
   for (const c of CAMPOS_EDITAVEIS) {
     if (c in mudancas) (anterior as Record<string, unknown>)[c] = item[c];
@@ -399,7 +411,7 @@ export async function listarSugestoes(): Promise<{ pessoas: string[]; projetos: 
 export async function devolverAguardando(hoje = new Date()): Promise<number> {
   const db = await getDb();
   const { rowsAffected } = await db.execute(
-    "UPDATE item SET status = 'a_fazer', atualizado_em = $1 WHERE status = 'aguardando' AND aguardando_ate <= $2",
+    "UPDATE item SET status = 'a_fazer', espera_tipo_id = NULL, atualizado_em = $1 WHERE status = 'aguardando' AND aguardando_ate <= $2",
     [agoraIso(), dataLocalIso(hoje)],
   );
   return rowsAffected;

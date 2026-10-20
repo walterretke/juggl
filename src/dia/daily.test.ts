@@ -31,6 +31,14 @@ describe("resumoDaDaily", () => {
     );
   });
 
+  it("bloqueio com motivo da espera mostra o motivo", () => {
+    const texto = resumoDaDaily(
+      { ontem: [], abertos: [], aguardando: [item("Deploy", { status: "aguardando", espera: "Aguardando aprovação", aguardando_quem: "Carla" })] },
+      quarta,
+    );
+    expect(texto.split("\n").pop()).toBe("- Deploy: Aguardando aprovação (Carla)");
+  });
+
   it("sem plano, usa o que vence hoje; na segunda fala da sexta", () => {
     const segunda = new Date(2026, 9, 12, 9);
     const texto = resumoDaDaily({ ontem: [], abertos: [item("Prazo", { prazo: "2026-10-12" })], aguardando: [] }, segunda);

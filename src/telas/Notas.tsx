@@ -149,7 +149,7 @@ export default function Notas({ versao, atalhoNota, aoVirarTarefa, aoAbrirTarefa
           onClick={() => invoke("abrir_nota")}
           className="flex items-center gap-2 rounded-lg bg-destaque px-3.5 py-1.5 text-sm font-semibold text-folha hover:opacity-90"
         >
-          Nova nota <kbd className="font-sans text-xs font-normal opacity-80">{atalhoNota}</kbd>
+          Novo lembrete <kbd className="font-sans text-xs font-normal opacity-80">{atalhoNota}</kbd>
         </button>
       </div>
 
@@ -167,12 +167,12 @@ export default function Notas({ versao, atalhoNota, aoVirarTarefa, aoAbrirTarefa
                   aoCancelar={() => setEditando(null)}
                   aoSalvar={(campos) => {
                     setEditando(null);
-                    agir(() => editarNota(nota, campos), "Nota salva");
+                    agir(() => editarNota(nota, campos), "Lembrete salvo");
                   }}
                 />
               ) : (
                 <>
-                  <button type="button" onClick={() => setEditando(nota.id)} className="min-w-0 flex-1 text-left" title="Editar a nota">
+                  <button type="button" onClick={() => setEditando(nota.id)} className="min-w-0 flex-1 text-left" title="Editar o lembrete">
                     <span className="block text-base font-medium">{nota.titulo}</span>
                     {nota.descricao && <span className="line-clamp-2 block whitespace-pre-line text-sm text-suave">{nota.descricao}</span>}
                     <span className="mt-0.5 block text-xs text-apagado">
@@ -181,7 +181,7 @@ export default function Notas({ versao, atalhoNota, aoVirarTarefa, aoAbrirTarefa
                     </span>
                   </button>
                   <div className="flex flex-wrap items-center gap-0.5">
-                    <Acao icone="check" titulo="Resolvida: para de avisar" aoClicar={() => agir(() => resolverNota(nota.id), "Nota resolvida")}>
+                    <Acao icone="check" titulo="Resolvido: para de avisar" aoClicar={() => agir(() => resolverNota(nota.id), "Lembrete resolvido")}>
                       Resolvida
                     </Acao>
                     <Acao icone="seta" titulo="Cria uma tarefa com o título e a descrição e abre para completar" aoClicar={() => agir(() => aoVirarTarefa(nota))}>
@@ -190,11 +190,11 @@ export default function Notas({ versao, atalhoNota, aoVirarTarefa, aoAbrirTarefa
                     <Acao
                       icone="ampulheta"
                       titulo={`Avisa só daqui a ${descreverIntervalo(ADIAR_MIN)}`}
-                      aoClicar={() => agir(() => adiarNota(nota, ADIAR_MIN), `Adiada: avisa daqui a ${descreverIntervalo(ADIAR_MIN)}`)}
+                      aoClicar={() => agir(() => adiarNota(nota, ADIAR_MIN), `Adiado: avisa daqui a ${descreverIntervalo(ADIAR_MIN)}`)}
                     >
                       Adiar
                     </Acao>
-                    <Acao icone="lixeira" titulo="Apagar a nota" perigo aoClicar={() => agir(() => apagarNota(nota.id), "Nota apagada")} />
+                    <Acao icone="lixeira" titulo="Apagar o lembrete" perigo aoClicar={() => agir(() => apagarNota(nota.id), "Lembrete apagado")} />
                   </div>
                 </>
               )}
@@ -206,7 +206,7 @@ export default function Notas({ versao, atalhoNota, aoVirarTarefa, aoAbrirTarefa
       {notas.fechadas.length > 0 && (
         <section>
           <button type="button" aria-expanded={verFechadas} onClick={() => setVerFechadas(!verFechadas)} className="text-sm text-suave hover:text-tinta">
-            {verFechadas ? "Esconder" : "Ver"} as resolvidas ({notas.fechadas.length})
+            {verFechadas ? "Esconder" : "Ver"} os resolvidos ({notas.fechadas.length})
           </button>
           {verFechadas && (
             <ul className="mt-2 flex flex-col gap-1">
@@ -217,7 +217,7 @@ export default function Notas({ versao, atalhoNota, aoVirarTarefa, aoAbrirTarefa
                       nota.status === "virou_tarefa" ? "bg-destaque-claro text-destaque-tinta" : "bg-ok-claro text-ok"
                     }`}
                   >
-                    {nota.status === "virou_tarefa" ? "Virou tarefa" : "Resolvida"}
+                    {nota.status === "virou_tarefa" ? "Virou tarefa" : "Resolvido"}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-[15px] text-tinta-2">{nota.titulo}</span>
                   {nota.status === "virou_tarefa" && nota.item_id && (
@@ -226,11 +226,11 @@ export default function Notas({ versao, atalhoNota, aoVirarTarefa, aoAbrirTarefa
                     </Acao>
                   )}
                   {nota.status === "resolvida" && (
-                    <Acao icone="voltar" titulo="Volta a avisar" aoClicar={() => agir(() => reabrirNota(nota), "Nota reaberta")}>
+                    <Acao icone="voltar" titulo="Volta a avisar" aoClicar={() => agir(() => reabrirNota(nota), "Lembrete reaberto")}>
                       Reabrir
                     </Acao>
                   )}
-                  <Acao icone="lixeira" titulo="Apagar a nota" perigo aoClicar={() => agir(() => apagarNota(nota.id), "Nota apagada")} />
+                  <Acao icone="lixeira" titulo="Apagar o lembrete" perigo aoClicar={() => agir(() => apagarNota(nota.id), "Lembrete apagado")} />
                 </li>
               ))}
             </ul>

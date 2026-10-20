@@ -14,11 +14,11 @@ const CHAVE_ABERTO = "ritual_aberto";
 /** Último dia em que o app lembrou do plano pendente (lembra uma vez só). */
 const CHAVE_LEMBRADO = "ritual_lembrado";
 
-/** Tudo que aparece no quadro Meu dia: caixa de entrada, A fazer, pausados e o item em foco. */
+/** Tudo que aparece no quadro Meu dia: caixa de entrada, A fazer, pausados, em espera e o item em foco. */
 export async function itensDoQuadro(): Promise<Item[]> {
   const db = await getDb();
   return db.select<Item[]>(
-    `${SELECT_ITEM} WHERE item.status IN ('inbox', 'a_fazer', 'pausado', 'em_foco')
+    `${SELECT_ITEM} WHERE item.status IN ('inbox', 'a_fazer', 'pausado', 'em_foco', 'aguardando')
       ORDER BY item.prazo IS NULL, item.prazo, prioridade.ordem IS NULL, prioridade.ordem, item.criado_em`,
   );
 }
@@ -110,6 +110,7 @@ export async function deveLembrarRitual(agora = new Date()): Promise<boolean> {
 export async function dadosDaDaily(hoje = new Date()): Promise<DadosDaily> {
   const anterior = diaUtilAnterior(hoje);
   const fim = new Date(anterior.getFullYear(), anterior.getMonth(), anterior.getDate() + 1);
-  const [ontem, abertos, aguardando] = await Promise.all([concluidosEntre(anterior, fim), itensDoQuadro(), listarItens("aguardando")]);
-  return { ontem, abertos, aguardando };
+  const [ontem, quadro, aguardando] = await Promise.all([concluidosEntre(anterior, fim), itensDoQuadro(), listarItens("aguardando")]);
+  // Os em espera vão para Bloqueios, não para Hoje.
+  return { ontem, abertos: quadro.filter((i) => i.status !== "aguardando"), aguardando };
 }
