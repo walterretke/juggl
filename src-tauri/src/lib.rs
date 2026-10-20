@@ -124,6 +124,12 @@ fn migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/0010_foco_cancelado.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 11,
+            description: "espera",
+            sql: include_str!("../migrations/0011_espera.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
@@ -396,7 +402,7 @@ fn trocar_atalho(
         return Ok(());
     }
     if do_outro == Some(novo) {
-        return Err(format!("{atalho} já é o atalho da nova tarefa ou da nota. Escolha outra combinação."));
+        return Err(format!("{atalho} já é o atalho da nova tarefa ou do lembrete. Escolha outra combinação."));
     }
     let atalhos = app.global_shortcut();
     atalhos
@@ -509,7 +515,7 @@ fn criar_bandeja(app: &tauri::App) -> tauri::Result<()> {
     let pausar = MenuItem::with_id(app, "pausar", "Parar timer", false, None::<&str>)?;
     let separador = PredefinedMenuItem::separator(app)?;
     let capturar = MenuItem::with_id(app, "capturar", "Nova tarefa", true, None::<&str>)?;
-    let anotar = MenuItem::with_id(app, "nota", "Nova nota", true, None::<&str>)?;
+    let anotar = MenuItem::with_id(app, "nota", "Novo lembrete", true, None::<&str>)?;
     let abrir = MenuItem::with_id(app, "abrir", "Abrir o Juggl", true, None::<&str>)?;
     let sair = MenuItem::with_id(app, "sair", "Sair", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&foco, &pausar, &separador, &capturar, &anotar, &abrir, &sair])?;

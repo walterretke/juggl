@@ -34,11 +34,11 @@ As marcações abaixo também valem no título do formulário (`Liberar VPN @car
 
 Um link do Teams, Jira, ServiceNow ou Azure DevOps na área de transferência é anexado com a origem reconhecida (o × remove). Tab completa `@` e `#` já usados; nomes com espaço viram `_` (`@Carla_Dias`).
 
-## Notas
+## Lembretes
 
-Uma nota é algo que você não pode esquecer, mas que ainda não é uma tarefa: "marque uma reunião com o Carlos". `Ctrl+Alt+Espaço` (troca nas configurações) abre uma janela rápida sobre qualquer janela, com título, descrição e de quanto em quanto tempo lembrar: 15 min, 30 min, 1 h, 2 h ou Outro (minutos ou horas, até uma semana). O último intervalo usado vem marcado na próxima nota. Enter salva (na descrição, Ctrl+Enter), Esc fecha. Como na nova tarefa, o texto selecionado na janela em uso vira a descrição; sem título, a primeira linha da descrição vira o título.
+Um lembrete é algo que você não pode esquecer, mas que ainda não é uma tarefa: "marque uma reunião com o Carlos". `Ctrl+Alt+Espaço` (troca nas configurações) abre uma janela rápida sobre qualquer janela, com título, descrição e de quanto em quanto tempo lembrar: 15 min, 30 min, 1 h, 2 h ou Outro (minutos ou horas, até uma semana). O último intervalo usado vem marcado no próximo lembrete. Enter salva (na descrição, Ctrl+Enter), Esc fecha. Como na nova tarefa, o texto selecionado na janela em uso vira a descrição; sem título, a primeira linha da descrição vira o título.
 
-A cada intervalo vem uma notificação do sistema ("Não esqueça: ..."); várias vencidas juntas viram uma notificação só. Durante o foco com o não perturbe ligado, o aviso espera o foco acabar. A tela **Notas** lista as notas ativas com o próximo aviso: clique para editar (trocar o intervalo recomeça a contagem), **Resolvida** para de avisar, **Adiar** empurra o próximo aviso em 1 h e **Virar tarefa** cria a tarefa na caixa de entrada com o mesmo título e descrição e abre o editor para completar. As resolvidas e as que viraram tarefa ficam embaixo, com Reabrir e Abrir tarefa. Na bandeja, Nova nota abre a mesma janela; `juggl --nota` também.
+A cada intervalo vem uma notificação do sistema ("Não esqueça: ..."); várias vencidas juntas viram uma notificação só. Durante o foco com o não perturbe ligado, o aviso espera o foco acabar. A tela **Lembretes** lista os lembretes ativos com o próximo aviso: clique para editar (trocar o intervalo recomeça a contagem), **Resolvido** para de avisar, **Adiar** empurra o próximo aviso em 1 h e **Virar tarefa** cria a tarefa na caixa de entrada com o mesmo título e descrição e abre o editor para completar. Os resolvidos e os que viraram tarefa ficam embaixo, com Reabrir e Abrir tarefa. Na bandeja, Novo lembrete abre a mesma janela; `juggl --nota` também.
 
 ## Triagem
 
@@ -77,9 +77,10 @@ Pelo teclado:
 
 ## Aguardando alguém
 
-- `W` (ou a ampulheta do item) põe o item em **Aguardando**: diga de quem é a vez (Carlos, fornecedor, equipe de redes) e quando cobrar o retorno (amanhã, em 2 dias, em 1 semana ou outra data).
+- `W` (ou a ampulheta do item) põe o item em **Aguardando**: escolha o motivo (Aguardando aprovação, Aguardando desenvolvimento, Aguardando resposta, Aguardando terceiros, Bloqueado ou os que você criar nas configurações), diga de quem é a vez (Carlos, fornecedor, equipe de redes) e quando cobrar o retorno (amanhã, em 2 dias, em 1 semana ou outra data).
 - O item sai de A fazer e de Hoje. No dia de cobrar, ele volta sozinho para A fazer com a etiqueta "cobrar Carlos" e o Juggl avisa (regra pronta **Cobrar retorno**, em Regras).
 - Na lista Aguardando, Enter volta o item para A fazer. Focar ou concluir encerra a espera.
+- Em Meu dia, a coluna **Em espera** mostra esses itens com o motivo no cartão. Soltar um cartão nela pede o motivo; tirar de lá limpa o motivo.
 
 ## Foco e timer
 
@@ -169,9 +170,9 @@ No editor da tarefa, "Anexar arquivo", arrastar ou colar (`Ctrl+V`) adiciona ane
 
 ## Bandeja, configurações e backup
 
-- Fechar a janela deixa o Juggl na bandeja do sistema, com o atalho ativo. O ícone tem o foco atual, Parar timer, Nova tarefa, Nova nota, Abrir o Juggl e Sair.
+- Fechar a janela deixa o Juggl na bandeja do sistema, com o atalho ativo. O ícone tem o foco atual, Parar timer, Nova tarefa, Novo lembrete, Abrir o Juggl e Sair.
 - Abrir o Juggl de novo só traz a janela existente. `juggl --captura` abre direto a captura (útil no Linux com Wayland: ligue esse comando a um atalho do sistema).
-- `,` abre as configurações: tema (igual ao sistema, claro ou escuro), atalho da captura, atalho da nota, uso do texto selecionado, minutos até a pausa por inatividade, prioridades (renomear, cor, ordem, criar e remover) e backup na hora.
+- `,` abre as configurações: tema (igual ao sistema, claro ou escuro), atalho da captura, atalho do lembrete, uso do texto selecionado, minutos até a pausa por inatividade, prioridades e tipos de espera (renomear, cor, ordem, criar e remover) e backup na hora.
 - Todo dia uma cópia do banco vai para a subpasta `backups/`, guardando as 7 mais recentes.
 - **Restaurar…** (em Configurações, Backup) volta o banco para um desses backups. Antes, o Juggl guarda o estado atual como um backup "antes de restaurar". Backups de uma versão anterior também servem.
 - **Itens recorrentes** (em Configurações): tarefas que voltam todo dia útil, toda semana ou todo mês. No dia, o item aparece na caixa de entrada; se o app ficou fechado, entra um só.

@@ -43,7 +43,11 @@ export function resumoDaDaily({ ontem, abertos, aguardando }: DadosDaily, hoje: 
     ),
     "Bloqueios:",
     ...lista(
-      aguardando.map((i) => `${i.titulo}${i.aguardando_quem ? `: aguardando ${i.aguardando_quem}` : ": aguardando retorno"}`),
+      aguardando.map((i) =>
+        i.espera
+          ? `${i.titulo}: ${i.espera}${i.aguardando_quem ? ` (${i.aguardando_quem})` : ""}`
+          : `${i.titulo}${i.aguardando_quem ? `: aguardando ${i.aguardando_quem}` : ": aguardando retorno"}`,
+      ),
       "nenhum",
     ),
   ].join("\n");

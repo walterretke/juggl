@@ -77,6 +77,7 @@ import Fechadas from "./Fechadas";
 import Agenda from "./agenda/Agenda";
 import { destinoAoRestaurar, NOME_LISTA } from "../tarefas/restaurar";
 import { rotuloAtalho } from "./origens";
+import { mensagemDeEspera, mudancasDeEspera, type Espera } from "./FormEspera";
 
 const MINUTO_MS = 60 * 1000;
 const MAX_DESFAZER = 30;
@@ -100,7 +101,7 @@ const NOME_TELA: Record<Tela, string> = {
   inbox: "Caixa de entrada",
   a_fazer: "A fazer",
   aguardando: "Aguardando",
-  notas: "Notas",
+  notas: "Lembretes",
   fechadas: "Fechadas",
   pessoas: "Pessoas",
   horas: "Horas da semana",
@@ -429,11 +430,13 @@ export default function Principal() {
     const parar = listen("item:criado", carregar);
     const pararNotas = listen("nota:criada", carregar);
     const pararPrioridades = listen("prioridades:alteradas", carregar);
+    const pararEsperas = listen("esperas:alteradas", carregar);
     const relogio = setInterval(() => setAgora(new Date()), MINUTO_MS);
     return () => {
       parar.then((f) => f());
       pararNotas.then((f) => f());
       pararPrioridades.then((f) => f());
+      pararEsperas.then((f) => f());
       clearInterval(relogio);
     };
   }, [carregar, pronto]);
@@ -826,7 +829,7 @@ export default function Principal() {
   const comandos: Comando[] = [
     ...TELAS.map((t) => ({ nome: `Ir para ${NOME_TELA[t]}`, acao: () => trocarLista(t) })),
     { nome: "Nova tarefa", tecla: "C", acao: () => invoke("abrir_captura") },
-    { nome: "Nova nota", acao: () => invoke("abrir_nota") },
+    { nome: "Novo lembrete", acao: () => invoke("abrir_nota") },
     { nome: "Copiar o resumo da daily", acao: () => copiarDaily() },
     { nome: "Abrir o overlay de foco", acao: () => abrirMini() },
     { nome: somTocando ? "Parar o som do foco" : "Tocar o som do foco", acao: () => alternarSom() },
@@ -987,7 +990,7 @@ export default function Principal() {
       : lista === "agenda"
       ? "Compromissos e tarefas por dia. Arraste uma tarefa da faixa sem horário para a grade para marcar a hora."
       : lista === "notas"
-      ? "O que você não pode esquecer, mas ainda não é tarefa. Cada nota avisa de tempos em tempos até ser resolvida ou virar tarefa."
+      ? "O que você não pode esquecer, mas ainda não é tarefa. Cada lembrete avisa de tempos em tempos até ser resolvido ou virar tarefa."
       : lista === "fechadas"
       ? "Tarefas concluídas e arquivadas. Restaurar devolve cada uma para a lista em que estava."
       : lista === "dia"
@@ -1033,14 +1036,9 @@ export default function Principal() {
           { status: destino },
           destino === "inbox" ? "Voltou para a caixa de entrada" : item.status === "aguardando" ? "Voltou para A fazer" : "Movido para A fazer",
         ),
-      aguardar: (quem: string | null, ate: string | null) => {
+      aguardar: (espera: Espera) => {
         setMenu(null);
-        aplicar(
-          item,
-          // Planejado para hoje e esperando alguém não combina: sai de Hoje.
-          { status: "aguardando", aguardando_quem: quem, aguardando_ate: ate, dia_planejado: null, quando: null },
-          quem ? `Aguardando ${quem}` : "Aguardando",
-        );
+        aplicar(item, mudancasDeEspera(espera), mensagemDeEspera(espera));
       },
       copiarStatus: () => copiarStatus(item),
       abrir: () => {
@@ -1534,9 +1532,9 @@ export default function Principal() {
               </>
             ) : lista === "notas" ? (
               <>
-                <span>Clique numa nota para editar</span>
-                <Dica teclas="N">nova nota</Dica>
-                <Dica teclas={rotuloAtalho(atalhoNota)}>nota de qualquer janela</Dica>
+                <span>Clique num lembrete para editar</span>
+                <Dica teclas="N">novo lembrete</Dica>
+                <Dica teclas={rotuloAtalho(atalhoNota)}>lembrete de qualquer janela</Dica>
                 <Dica teclas="Tab">trocar tela</Dica>
               </>
             ) : lista === "fechadas" ? (

@@ -81,6 +81,43 @@ describe("migrations", () => {
     expect(db.prepare("SELECT COUNT(*) AS n FROM evento").get()).toEqual({ n: 0 });
   });
 
+  it("um banco já em uso ganha os tipos de espera sem perder os itens", () => {
+    const db = novoBanco();
+    migrar(db, 1, 10);
+    inserirItem(db, "item-1");
+    db.prepare("UPDATE item SET status = 'aguardando', aguardando_quem = 'Carla' WHERE id = 'item-1'").run();
+
+    migrar(db, 11);
+    expect(db.prepare("SELECT id, status, aguardando_quem, espera_tipo_id FROM item").all()).toEqual([
+      { id: "item-1", status: "aguardando", aguardando_quem: "Carla", espera_tipo_id: null },
+    ]);
+    const tipos = db.prepare("SELECT id, nome FROM tipo_espera ORDER BY ordem").all();
+    expect(tipos.map((t) => t.nome)).toEqual([
+      "Aguardando aprovação",
+      "Aguardando desenvolvimento",
+      "Aguardando resposta",
+      "Aguardando terceiros",
+      "Bloqueado",
+    ]);
+
+    // O motivo grava e, se o tipo for removido, o item continua em espera sem motivo.
+    db.prepare("UPDATE item SET espera_tipo_id = 'aprovacao' WHERE id = 'item-1'").run();
+    expect(() => db.prepare("UPDATE item SET espera_tipo_id = 'inventado' WHERE id = 'item-1'").run()).toThrow(/FOREIGN KEY/);
+    db.prepare("DELETE FROM tipo_espera WHERE id = 'aprovacao'").run();
+    expect(db.prepare("SELECT status, espera_tipo_id FROM item").get()).toEqual({ status: "aguardando", espera_tipo_id: null });
+    expect(() => db.prepare("INSERT INTO tipo_espera (id, nome, ordem) VALUES ('x', 'bloqueado', 9)").run()).toThrow(/UNIQUE/);
+  });
+
+  it("o SELECT de itens do app roda no schema final", () => {
+    const db = novoBanco();
+    migrar(db, 1);
+    inserirItem(db, "item-1");
+    const codigo = readFileSync(join(RAIZ, "src", "db", "itens.ts"), "utf8");
+    const select = codigo.match(/export const SELECT_ITEM = `([\s\S]*?)`;/)?.[1];
+    expect(select).toBeTruthy();
+    expect(db.prepare(`${select} WHERE item.id = 'item-1'`).get()).toMatchObject({ id: "item-1", espera: null, espera_cor: null });
+  });
+
   it("o banco aceita todo tipo de evento que o código grava", () => {
     const db = novoBanco();
     migrar(db, 1);

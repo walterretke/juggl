@@ -15,6 +15,7 @@ import { montarQuadro, NOME_QUANDO, proximoQuando, quandoPadrao } from "../ritua
 import { ETIQUETA_PRIORIDADE, FAIXA_PRIORIDADE } from "./cores";
 import { COR_ORIGEM } from "./origens";
 import SeletorSom from "./SeletorSom";
+import PedidoEspera, { mensagemDeEspera, mudancasDeEspera, type Espera } from "./FormEspera";
 
 interface Props {
   /** Muda quando os itens mudam em outra tela, para recarregar. */
@@ -43,7 +44,7 @@ interface Props {
   atalhoCaptura: string;
 }
 
-type Coluna = "chegou" | "hoje" | "fazendo" | "feito" | "depois";
+type Coluna = "chegou" | "hoje" | "fazendo" | "espera" | "feito" | "depois";
 
 const TIPO_ITEM = "text/juggl-item";
 
@@ -105,6 +106,13 @@ function Cartao({ item, hoje, arrasto, aoAbrir, numero, children }: PropsCartao)
         {prazo && <Etiqueta classe={urgente(prazo) ? "bg-atraso-claro text-atraso" : undefined}>{prazo}</Etiqueta>}
         {item.prioridade && <Etiqueta classe={ETIQUETA_PRIORIDADE[item.prioridade_cor ?? "cinza"]}>{item.prioridade}</Etiqueta>}
         {item.status === "pausado" && <Etiqueta>Pausado</Etiqueta>}
+        {item.status === "aguardando" && (
+          <>
+            <Etiqueta classe={ETIQUETA_PRIORIDADE[item.espera_cor ?? "cinza"]}>{item.espera ?? "Em espera"}</Etiqueta>
+            {item.aguardando_quem && <span>esperando {item.aguardando_quem}</span>}
+            {item.aguardando_ate && <Etiqueta>cobrar {descreverPrazo(item.aguardando_ate, hoje)}</Etiqueta>}
+          </>
+        )}
         {item.subtarefas > 0 && (
           <Etiqueta classe={item.subtarefas_feitas === item.subtarefas ? "bg-ok-claro text-ok" : undefined}>
             ☑ {item.subtarefas_feitas}/{item.subtarefas}
@@ -162,6 +170,8 @@ export default function MeuDia({
   const [alvo, setAlvo] = useState<Coluna | null>(null);
   const [depoisAberto, setDepoisAberto] = useState<boolean | null>(null);
   const [fechando, setFechando] = useState<Record<string, Destino> | null>(null);
+  /** Cartão solto em Em espera, esperando o motivo. */
+  const [esperando, setEsperando] = useState<Item | null>(null);
   const [agora, setAgora] = useState(() => Date.now());
   const hoje = new Date(agora);
   const diaHoje = dataLocalIso(hoje);
@@ -204,7 +214,7 @@ export default function MeuDia({
   async function planejar(item: Item) {
     if (item.dia_planejado === diaHoje && item.status !== "inbox") return;
     const mudancas: Mudancas = { dia_planejado: diaHoje, quando: item.quando ?? quandoPadrao(new Date()) };
-    if (item.status === "inbox" || item.status === "feito") mudancas.status = "a_fazer";
+    if (item.status === "inbox" || item.status === "feito" || item.status === "aguardando") mudancas.status = "a_fazer";
     await marcarDiaPlanejado();
     await aoAplicar(item, mudancas, "Escolhido para hoje");
   }
@@ -218,6 +228,9 @@ export default function MeuDia({
     try {
       if (coluna === "fazendo") {
         if (!emFoco) aoFocar(item);
+      } else if (coluna === "espera") {
+        // Pede o motivo antes de mover; trocar o motivo de quem já está lá é pelo clique no cartão.
+        if (item.status !== "aguardando") setEsperando(item);
       } else if (coluna === "feito") {
         if (emFoco) await aoConcluir();
         else if (item.status !== "feito") await aoAplicar(item, { status: "feito" }, "Concluído");
@@ -236,8 +249,27 @@ export default function MeuDia({
     }
   }
 
+  /** Põe o cartão em espera com o motivo escolhido; se estava em foco, o timer para antes. */
+  async function confirmarEspera(espera: Espera) {
+    const item = esperando;
+    setEsperando(null);
+    if (!item) return;
+    try {
+      if (item.status === "em_foco") {
+        if (!foco) return;
+        await encerrarFoco(foco, "pausa");
+        await aoAplicar({ ...item, status: "pausado" }, mudancasDeEspera(espera), `Timer parado. ${mensagemDeEspera(espera)}`);
+        aoAlterar();
+      } else {
+        await aoAplicar(item, mudancasDeEspera(espera), mensagemDeEspera(espera));
+      }
+    } catch (e) {
+      setErro(String(e));
+    }
+  }
+
   /** Move um cartão (que não está em foco) para Chegou, Hoje ou Depois. */
-  async function mover(coluna: Exclude<Coluna, "fazendo" | "feito">, item: Item) {
+  async function mover(coluna: Exclude<Coluna, "fazendo" | "feito" | "espera">, item: Item) {
     if (coluna === "hoje") {
       await planejar(item);
     } else if (item.status === "feito") {
@@ -245,6 +277,8 @@ export default function MeuDia({
     } else if (coluna === "chegou") {
       if (item.status !== "inbox")
         await aoAplicar(item, { status: "inbox", dia_planejado: null, quando: null }, "Voltou para a caixa de entrada");
+    } else if (item.status === "aguardando") {
+      await aoAplicar(item, { status: "a_fazer", dia_planejado: null, quando: null }, "Saiu da espera");
     } else {
       const mudancas: Mudancas = { dia_planejado: null, quando: null };
       if (item.status === "inbox") mudancas.status = "a_fazer";
@@ -338,6 +372,7 @@ export default function MeuDia({
 
   return (
     <div className="flex flex-col gap-5 pb-6">
+      {esperando && <PedidoEspera item={esperando} agora={hoje} aoConfirmar={confirmarEspera} aoCancelar={() => setEsperando(null)} />}
       {primeiraVez && (
         <section aria-label="Primeiros passos" className="rounded-2xl bg-cartao px-6 py-5 shadow-[0_0_0_1px_var(--color-linha)]">
           <h2 className="font-titulo text-[22px] font-medium">Bem-vindo ao Juggl</h2>
@@ -466,7 +501,7 @@ export default function MeuDia({
         </section>
       )}
 
-      <section aria-label="Quadro do dia" className="grid grid-cols-1 items-stretch gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1.15fr_1.25fr_1fr]">
+      <section aria-label="Quadro do dia" className="grid grid-cols-1 items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[1fr_1.15fr_1.25fr_1fr_1fr]">
         <div {...alvoDaColuna("chegou")} className={classeColuna("chegou", "bg-lateral")}>
           {tituloColuna("Chegou", quadro.chegou.length || "")}
           <p className="px-1 text-[13px] text-suave">
@@ -583,6 +618,20 @@ export default function MeuDia({
             <p className="px-1 text-[13px] text-suave">Nada em foco. Clique em Focar num item de Hoje ou arraste um cartão para cá.</p>
           )}
           <p className="px-1 text-[13px] text-apagado">Uma coisa por vez. Parar o timer guarda onde você parou.</p>
+        </div>
+
+        <div {...alvoDaColuna("espera")} className={classeColuna("espera", "bg-lateral")}>
+          {tituloColuna("Em espera", quadro.espera.length || "")}
+          <p className="px-1 text-[13px] text-suave">
+            {quadro.espera.length === 0 ? "Nada travado. " : ""}Arraste para cá o que depende de outra pessoa; o Juggl pergunta o motivo.
+          </p>
+          {quadro.espera.map((item) => (
+            <Cartao key={item.id} item={item} hoje={hoje} arrasto={arrastavel(item)} aoAbrir={aoAbrir}>
+              <button type="button" onClick={() => setEsperando(item)} title="Trocar o motivo, quem ou quando cobrar" className={botaoPequeno}>
+                Editar
+              </button>
+            </Cartao>
+          ))}
         </div>
 
         <div {...alvoDaColuna("feito")} className={classeColuna("feito", "bg-lateral")}>

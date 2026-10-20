@@ -45,7 +45,7 @@ export default function CampoAtalho({ atalho, aoMudarAtalho, aoGravar, qual = "c
       <div className="mt-2 flex gap-2">
         <input
           readOnly
-          aria-label={qual === "nota" ? "Atalho da nota" : "Atalho da nova tarefa"}
+          aria-label={qual === "nota" ? "Atalho do lembrete" : "Atalho da nova tarefa"}
           value={gravando ? (novoAtalho ? rotuloAtalho(novoAtalho) : "Aperte as teclas…") : rotuloAtalho(novoAtalho ?? atalho)}
           onFocus={() => {
             setGravando(true);

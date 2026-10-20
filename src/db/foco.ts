@@ -109,7 +109,7 @@ export async function cancelarFoco(foco: Foco): Promise<void> {
 /** Põe o item em foco. Quem estava em foco antes precisa ser encerrado antes (ver `trocarFoco`). */
 async function iniciarFoco(itemId: string, de: string): Promise<void> {
   // Focar num item que estava esperando alguém encerra a espera.
-  await gravarCampos(itemId, { status: "em_foco", aguardando_quem: null, aguardando_ate: null });
+  await gravarCampos(itemId, { status: "em_foco", aguardando_quem: null, aguardando_ate: null, espera_tipo_id: null });
   await registrarEvento(itemId, "foco_inicio", { de });
   await gravarConfig(CHAVE_PULSO, agoraIso());
 }
